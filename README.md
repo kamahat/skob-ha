@@ -88,22 +88,6 @@ logger:
     custom_components.boks: debug
 ```
 
-## Interoperability statement
-
-This project exists so that owners of a Boks mailbox can use **their own
-device** with **their own** home automation system, locally. It reads status
-information the device exposes over standard, unauthenticated Bluetooth
-characteristics. It circumvents no security measure, extracts no secret, and
-does not interact with the vendor's servers.
-
-## Credits & licenses
-
-- Home Assistant integration and documentation: **GPL-3.0** (see `LICENSE`).
-- Bundled firmware: third-party work by **fl4p**, declared MIT — see
-  [`firmware/nimble-ble-proxy/NOTICE.md`](firmware/nimble-ble-proxy/NOTICE.md)
-  for attribution, the pinned upstream commit, and the single portability
-  change applied.
-
 ### GATT cache and the `error=-2` failure mode
 
 ESPHome Bluetooth proxies only resolve characteristics after an explicit
@@ -120,3 +104,19 @@ This integration works around it by **purging the GATT cache at the end of each
 session**, which forces a fresh discovery on the next attach. In practice you may
 see a single failed connection right after a Home Assistant restart; it recovers
 on the following attempt and then stays connected.
+
+## Interoperability statement
+
+This project exists so that owners of a Boks mailbox can use **their own
+device** with **their own** home automation system, locally. It reads status
+information the device exposes over standard, unauthenticated Bluetooth
+characteristics. It circumvents no security measure, extracts no secret, and
+does not interact with the vendor's servers.
+
+## Credits & licenses
+
+- Home Assistant integration and documentation: **GPL-3.0** (see `LICENSE`).
+- Bundled firmware: third-party work by **fl4p**, declared MIT — see
+  [`firmware/nimble-ble-proxy/NOTICE.md`](firmware/nimble-ble-proxy/NOTICE.md)
+  for attribution, the pinned upstream commit, and the single portability
+  change applied.
