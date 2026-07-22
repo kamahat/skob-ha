@@ -1,15 +1,21 @@
 {
   "domain": "boks",
   "name": "Boks",
-  "codeowners": ["@kamahat"],
+  "codeowners": [
+    "@kamahat"
+  ],
   "config_flow": true,
-  "dependencies": ["bluetooth_adapters"],
+  "dependencies": [
+    "bluetooth_adapters"
+  ],
   "documentation": "https://github.com/kamahat/skob",
   "integration_type": "device",
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/kamahat/skob/issues",
-  "requirements": ["bleak-retry-connector>=3.5.0"],
-  "version": "0.1.0",
+  "requirements": [
+    "bleak-retry-connector>=3.5.0"
+  ],
+  "version": "0.1.1",
   "bluetooth": [
     {
       "service_uuid": "a7630001-f491-4f21-95ea-846ba586e361",

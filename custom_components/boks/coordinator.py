@@ -163,7 +163,7 @@ class BoksLink:
             device,
             self.address,
             self._on_disconnected,
-            use_services_cache=True,
+            use_services_cache=False,
         )
         self._client = client
         self.state.connected = True
@@ -187,6 +187,18 @@ class BoksLink:
                 )
                 await self._async_sleep(KEEPALIVE_INTERVAL)
         finally:
+            # Le cache GATT doit repartir vide à chaque session. Home Assistant
+            # réutilise ses services en cache dès que le proxy annonce la
+            # capacité REMOTE_CACHING (et ce, quel que soit `use_services_cache`,
+            # cf. bleak_esphome : `REMOTE_CACHING or dangerous_use_bleak_cache`).
+            # Or les proxys ESPHome ne résolvent les characteristics qu'après une
+            # requête GetServices explicite : sans elle, le proxy n'a aucun objet
+            # côté connexion et toutes les opérations échouent (error=-2). Vider
+            # le cache ici force la découverte au prochain rattachement.
+            try:
+                await client.clear_cache()
+            except Exception as err:  # noqa: BLE001 - purement opportuniste
+                _LOGGER.debug("purge du cache GATT impossible: %s", err)
             await self._async_disconnect()
 
     async def _async_read_static(self, client: BleakClientWithServiceCache) -> None:

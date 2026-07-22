@@ -79,6 +79,7 @@ n'échange pas avec elle. Deux conséquences :
 | Connexion puis coupure vers 30 s | Keepalive non actif — vérifiez les logs de l'intégration |
 | Échecs de connexion fréquents | Signal faible. La boîte est un caisson métallique : visez la façade plastique, voir [matériel](hardware.md) |
 | Entités *indisponibles* | Le lien BLE est tombé ; le capteur *Lien BLE*, lui, reste disponible et vous le signale |
+| Une connexion échoue après un redémarrage, puis tout va bien | Normal : le cache GATT est purgé au premier essai (voir ci-dessous) |
 
 Activer les logs de debug :
 

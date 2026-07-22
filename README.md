@@ -78,6 +78,7 @@ client keeps exchanging with it. Two consequences:
 | Connects then drops after ~30 s | Keepalive not running — check the integration logs |
 | Frequent connection failures | Weak signal. The mailbox is a metal enclosure: aim for line of sight to its plastic front, and see [hardware](docs/hardware.md) |
 | Entities show *unavailable* | The BLE link is down; the *BLE link* sensor stays available and tells you so |
+| One failed connection right after a restart, then fine | Expected: the GATT cache is purged on the first attempt (see below) |
 
 Enable debug logging:
 
@@ -102,3 +103,20 @@ does not interact with the vendor's servers.
   [`firmware/nimble-ble-proxy/NOTICE.md`](firmware/nimble-ble-proxy/NOTICE.md)
   for attribution, the pinned upstream commit, and the single portability
   change applied.
+
+### GATT cache and the `error=-2` failure mode
+
+ESPHome Bluetooth proxies only resolve characteristics after an explicit
+*GetServices* request. Home Assistant skips that request whenever it has cached
+services **and** the proxy advertises the `REMOTE_CACHING` feature — and it does
+so regardless of what a client asks for (`REMOTE_CACHING or
+dangerous_use_bleak_cache` in `bleak_esphome`).
+
+Proxies that advertise `REMOTE_CACHING` without implementing it therefore end up
+with no characteristic objects for the connection, and every handle-based
+operation fails with `error=-2`.
+
+This integration works around it by **purging the GATT cache at the end of each
+session**, which forces a fresh discovery on the next attach. In practice you may
+see a single failed connection right after a Home Assistant restart; it recovers
+on the following attempt and then stays connected.
