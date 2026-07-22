@@ -1,0 +1,18 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "confirm": {
+        "description": "Add {name}?"
+      },
+      "user": {
+        "description": "Select the Boks to add.",
+        "data": { "address": "Device" }
+      }
+    },
+    "abort": {
+      "no_devices_found": "No Boks found. Make sure a Bluetooth adapter or an ESPHome Bluetooth proxy is in range, and that the official dongle is unplugged (it holds the connection).",
+      "already_configured": "This Boks is already configured."
+    }
+  }
+}

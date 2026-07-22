@@ -1,0 +1,490 @@
+menu "nimble-ble-proxy"
+
+config NBP_WIFI
+    bool "Bring up WiFi STA + HTTP API (dashboard, OTA, aioesphomeapi)"
+    default y
+    help
+        Master switch for every WiFi-dependent subsystem: the STA
+        connect, mDNS announce, the OTA / dashboard httpd listener,
+        and the aioesphomeapi TCP server on port 6053.
+
+        Turn off to ship a BLE-only build. The radios stay BLE-only;
+        the HA proxy and the web dashboard disappear with it (until
+        a BLE-side transport is added). NimBLE scanner + clone
+        continue to work unchanged.
+
+config NBP_OTA
+    bool "Expose HTTP OTA endpoint (/update) for remote firmware flash"
+    depends on NBP_WIFI
+    default y
+    help
+        Register the POST /update handler that streams a raw .bin into
+        the inactive OTA slot and reboots. Turn off for a "lockdown"
+        build where firmware can only be updated over serial — useful
+        for production deployments on untrusted LANs since OTA over
+        plain HTTP is a write primitive for anyone who can reach the
+        device.
+
+        Disabling drops the app_update component dependency (~12 KB
+        flash) and removes /update from the httpd. The shared httpd
+        listener stays up so the dashboard, /stats.json, /clone, etc.
+        keep working.
+
+        The partition table still reserves two OTA slots either way —
+        re-flash via serial picks ota_0 by default. To roll back to
+        a single-slot factory layout edit partitions.csv.
+
+config NBP_LIVENESS_WDT
+    bool "Self-recovery liveness watchdog (reboot on upstream-LAN loss)"
+    depends on NBP_WIFI
+    default y
+    help
+        Spawn a supervisor task that probes upstream LAN reachability
+        (STA default gateway + a known-open host) every
+        NBP_LIVENESS_INTERVAL_SECS. After NBP_LIVENESS_THRESHOLD
+        consecutive cycles where ALL targets are unreachable, it calls
+        esp_restart().
+
+        Recovers a total network wedge (a WiFi/coex livelock under heavy
+        forwarded throughput) where tasks stay alive — so the IDF
+        Task-WDT never fires — but the IP path is dead, which otherwise
+        needs a physical power-cycle. Runtime-tunable / disable via
+        POST /liveness?enabled=0; GET /liveness reports state.
+
+config NBP_LIVENESS_INTERVAL_SECS
+    int "Liveness: seconds between probe cycles"
+    depends on NBP_LIVENESS_WDT
+    default 30
+    range 5 3600
+
+config NBP_LIVENESS_THRESHOLD
+    int "Liveness: consecutive failed cycles before reboot"
+    depends on NBP_LIVENESS_WDT
+    default 6
+    range 1 60
+    help
+        Default 6 × 30 s ≈ 3 min of sustained unreachability before a
+        reboot — comfortably longer than a normal STA reconnect, so a
+        brief AP blip self-heals without rebooting.
+
+config NBP_AP_FALLBACK
+    bool "SoftAP fallback + provisioning page when STA can't associate"
+    depends on NBP_WIFI
+    default n
+    help
+        If the WiFi STA can't get an IP within NBP_AP_FALLBACK_SECS
+        (bad creds, AP down, no creds set at all), bring up a SoftAP
+        named "<hostname>-setup" and serve a single page at
+        http://192.168.4.1/ that exposes:
+          POST /wifi?ssid=...&psk=...   write to NVS, then reboot
+        Replaces the "edit wifi_creds.h + re-flash" workflow with a
+        runtime provisioning step — high value for distributing
+        prebuilt binaries.
+
+        Credential lookup order at boot:
+          1. NVS namespace "wifi", keys "ssid" / "psk" (set via /wifi)
+          2. WIFI_SSID / WIFI_PASSWORD from include/wifi_creds.h, if
+             that header exists (now optional with this gate on)
+          3. neither set → go straight to AP fallback
+
+        Costs ~15 KB flash and one extra netif + httpd code path that
+        only links when this gate is on. While the AP is up no other
+        subsystem starts (mDNS, api_server, clone) — the device
+        deliberately stays in provisioning mode until the user
+        submits creds and it reboots.
+
+config NBP_AP_FALLBACK_SECS
+    int "SoftAP fallback: STA association timeout (seconds)"
+    depends on NBP_AP_FALLBACK
+    default 30
+    range 5 300
+    help
+        How long to wait for the STA to acquire an IP before giving
+        up and switching the radio into SoftAP provisioning mode.
+        Bumping this is harmless on a healthy network; lower it for
+        faster recovery when the configured AP is known-bad.
+
+config NBP_WS_PROXY
+    bool "WebSocket bridge: aioesphomeapi over ws://<host>/api (browser clients)"
+    depends on NBP_WIFI
+    select HTTPD_WS_SUPPORT
+    default n
+    help
+        Add a binary WebSocket route at GET /api on the shared dashboard
+        httpd. Each WS message carries raw plaintext aioesphomeapi protocol
+        bytes; the bridge relays them verbatim to/from the existing TCP
+        api_server over an on-device loopback connection (127.0.0.1:6053).
+        This lets a browser (e.g. a JS port of aioesphomeapi) drive the BLE
+        proxy — Hello/DeviceInfo, advertisement subscriptions, GATT
+        connect/read/write/notify — even though browsers can't open a raw
+        TCP socket.
+
+        The api_server protocol code is untouched: from its side the
+        browser is just another HA client on a normal TCP connection, so
+        the handshake, Bluetooth* handlers, send_async broadcast and
+        dead-fd reaping all apply unchanged. Selects HTTPD_WS_SUPPORT.
+
+        Cost per connected browser: one loopback socket here + one accepted
+        socket and an 8 KiB connection task inside api_server + a ~4 KiB
+        pump task. Concurrent bridges are capped (MAX_WS_SESSIONS=2) so a
+        page can't exhaust the 16-socket LWIP budget shared with httpd,
+        mDNS and clone. Disable for builds that only ever talk to HA over
+        plain TCP.
+
+config NBP_NAT_ROUTER
+    bool "WiFi NAT router: SoftAP + NAPT out the STA uplink"
+    depends on NBP_WIFI
+    default n
+    select LWIP_IP_FORWARD
+    select LWIP_IPV4_NAPT
+    select LWIP_IPV4_NAPT_PORTMAP
+    help
+        Turn the proxy into a small travel-router. The device already
+        joins an upstream WiFi as a station (wifi_sta); with this gate
+        on it ALSO brings up its own SoftAP in APSTA mode and NATs
+        traffic from AP clients out through the STA uplink.
+
+        Clients that associate to the SoftAP get a 192.168.x.x lease
+        from the on-device DHCP server (with the upstream DNS handed
+        down), and their traffic is source-NAT'd onto the STA's IP.
+        Inbound port-forwarding rules ("ext TCP/UDP port -> internal
+        client ip:port") are configurable at runtime from the dashboard
+        and persisted in NVS.
+
+        Selects the lwIP IP_FORWARD / NAPT / NAPT_PORTMAP options, so
+        they only compile in when this gate is on — a normal BLE-proxy
+        build pays nothing. The SoftAP shares the STA's radio channel
+        (single-radio constraint), so the STA link is unaffected.
+
+config NBP_NAT_AP_SSID
+    string "NAT SoftAP SSID (default; runtime-overridable via /nat)"
+    depends on NBP_NAT_ROUTER
+    default "nimble-nat"
+    help
+        Compile-time default SSID for the NAT SoftAP. Overridable at
+        runtime from the dashboard (POST /nat), persisted in NVS.
+
+config NBP_NAT_AP_PASSWORD
+    string "NAT SoftAP WPA2 password (8..63 chars; <8 = open AP)"
+    depends on NBP_NAT_ROUTER
+    default "nimble-proxy"
+    help
+        Default WPA2-PSK password. A value shorter than 8 characters
+        makes the AP open (no encryption). Runtime-overridable via the
+        dashboard, persisted in NVS.
+
+config NBP_NAT_AP_IP
+    string "NAT SoftAP gateway IP (/24)"
+    depends on NBP_NAT_ROUTER
+    default "192.168.4.1"
+    help
+        IPv4 address of the SoftAP interface; also the gateway + DHCP
+        server address handed to clients. The subnet is always /24.
+
+config NBP_NAT_AP_MAX_CONN
+    int "NAT SoftAP max simultaneous clients"
+    depends on NBP_NAT_ROUTER
+    default 4
+    range 1 10
+    help
+        Upper bound on associated stations. Each client consumes a
+        DHCP lease + NAPT table headroom.
+
+config NBP_NAT_PORTMAP_MAX
+    int "NAT port-forwarding table size"
+    depends on NBP_NAT_ROUTER
+    default 16
+    range 1 32
+    help
+        Number of inbound port-forwarding rules that can be stored.
+        Capped at 32 by lwIP's IP_PORTMAP_MAX. Each slot costs a few
+        bytes of BSS plus one NVS blob entry.
+
+config NBP_NAT_THROUGHPUT
+    bool "Report SoftAP throughput (dashboard repeater chart)"
+    depends on NBP_NAT_ROUTER
+    default y
+    help
+        Tally bytes forwarded between the SoftAP clients and the STA
+        uplink, split by direction, and expose them as "ap_rx"/"ap_tx"
+        in /stats.json so the dashboard can draw a live repeater
+        throughput chart (KB/s up/down). The chart self-hides when the
+        fields are absent, so turning this off cleanly removes it.
+
+        Implemented as an observe-only lwIP forward hook
+        (LWIP_HOOK_IP4_CANFORWARD in nat_router.cpp) that adds each
+        forwarded datagram's length to an up/down counter and returns
+        "no decision". Cost is a short critical section per forwarded
+        packet plus two 64-bit counters; off, the hook compiles out
+        entirely and lwIP's forward path is untouched.
+
+config NBP_BLE
+    bool "Enable BLE (NimBLE scanner/proxy + all BLE features)"
+    default y
+    select BT_ENABLED
+    help
+        Master switch for the entire BLE side of the proxy. ON (the
+        default) pulls in the NimBLE controller + host (selects
+        BT_ENABLED; the host choice is pinned to NimBLE in
+        sdkconfig.defaults) and compiles the BLE backend: the
+        observer/central scanner that forwards advertisements to Home
+        Assistant, the per-peer GATT client pool, and the BluetoothProxy
+        half of the aioesphomeapi protocol. Every optional BLE feature
+        nested below (ble_httpd dashboard, clone, SMP pairing, radio
+        auto-off, the live device table) lives under this gate.
+
+        Turn OFF to build a BLE-free firmware: no scanner, no
+        BluetoothProxy API, and the NimBLE stack itself is left out of
+        the image entirely (BT_ENABLED is no longer selected), reclaiming
+        its flash + RAM. Only the WiFi-side subsystems remain — use this
+        for a pure NAT-router / dashboard build.
+
+        NOTE: turning this off together with NBP_WIFI leaves the device
+        with no remote transport at all (no HTTP, no api_server, no BLE
+        dashboard) — it would be reachable only over serial. Keep at
+        least one of NBP_WIFI / NBP_BLE on.
+
+if NBP_BLE
+
+config NBP_BLE_HTTPD
+    bool "BLE-side HTTP transport (GATT request/response service)"
+    default n
+    select BT_NIMBLE_ROLE_PERIPHERAL  if BT_NIMBLE_ENABLED
+    select BT_NIMBLE_ROLE_BROADCASTER if BT_NIMBLE_ENABLED
+    help
+        Expose a NimBLE peripheral GATT service that carries simple
+        request/response messages (HTTP-like). Lets a Web Bluetooth
+        page act as the dashboard frontend when NBP_WIFI is off.
+
+        Service / characteristic UUIDs:
+          service   6e627062-7072-7879-0001-000000000000
+          REQUEST   ...0001  (write — client → device, fragmented)
+          RESPONSE  ...0002  (notify — device → client, fragmented)
+          INFO      ...0003  (read — MTU + protocol version)
+
+        Framing per fragment: [u8 flags][u8 reqId][payload].
+        flags bit0 = FIN (last fragment), bit1 = ERR.
+
+        Note: this stub advertises its own service UUID. If NBP_CLONE
+        is also enabled, NimBLE has a single advertising context — only
+        one of them gets advertised at a time. A real coordination
+        layer can be added later.
+
+config NBP_BLE_AUTO_OFF
+    bool "Auto-quiesce the BLE radio when nothing needs it"
+    default n
+    help
+        When on, a small supervisor task watches who actually needs the
+        radio and quiesces it when idle, in two independent tiers:
+
+          - Central role (the continuous, duty-cycled scan — the dominant
+            power draw): paused whenever NO ESPHome API client is
+            connected AND no GATT links are open AND BLE clone is
+            inactive. Resumed instantly when any of those reappears.
+
+          - Peripheral role (advertising the ble_httpd dashboard / clone
+            mirror): suspended only when WiFi (STA) is connected AND no
+            central is connected to us AND clone is inactive. Kept ON
+            whenever WiFi is down, because then BLE is the only path to
+            the dashboard (see NBP_BLE_HTTPD).
+
+        When both tiers are idle and no links exist, the controller has
+        no scan/adv/connection activity and drops to its lowest idle
+        power without a full deinit — so the cloned/ble_httpd GATT DB
+        (one-shot in NimBLE) survives and the radio comes straight back.
+
+        Transitions to "needed" are immediate; transitions to "idle" wait
+        NBP_BLE_AUTO_OFF_IDLE_SECS to avoid churn on brief HA/WiFi blips.
+
+config NBP_BLE_AUTO_OFF_IDLE_SECS
+    int "Auto-off: idle grace period before quiescing (seconds)"
+    depends on NBP_BLE_AUTO_OFF
+    default 30
+    help
+        How long a role must stay continuously idle before it is
+        quiesced. Guards against toggling the radio on every HA
+        reconnect or transient WiFi drop. Re-activation is always
+        immediate regardless of this value.
+
+config NBP_CLONE
+    bool "BLE clone: local GATT mirror of one upstream device"
+    default n
+    select BT_NIMBLE_ROLE_PERIPHERAL  if BT_NIMBLE_ENABLED
+    select BT_NIMBLE_ROLE_BROADCASTER if BT_NIMBLE_ENABLED
+    select BT_NIMBLE_NVS_PERSIST      if BT_NIMBLE_ENABLED
+    help
+        Scan for a configured upstream peripheral (target MAC stored in
+        NVS), connect to it as a central, walk its GATT database, then
+        expose an identical local GATT server that proxies every
+        read / write / subscribe back to the upstream link.
+
+        Multiple local centrals (e.g. HA phone app + vendor app) can
+        connect simultaneously and all see the same upstream device.
+        NimBLE handles notification fan-out natively; writes from N
+        centrals serialize through one upstream mutex.
+
+        The ESPHome-style scanner + raw-advertisement forwarding keeps
+        running. Clone uses one of the BT_NIMBLE_MAX_CONNECTIONS slots
+        for its upstream link; local centrals also consume slots while
+        connected. Consider bumping BT_NIMBLE_MAX_CONNECTIONS by the
+        number of simultaneous local centrals you expect.
+
+        Costs ~20 KB flash and ~10-15 KB RAM when active and a device
+        is cloned. NimBLE GATT registration is one-shot, so re-targeting
+        requires a reboot: POST /clone?addr=...&type=N then reboot.
+
+config NBP_CLONE_BOOT_GUARD
+    bool "Clone: disable on next boot if previous boot panicked early"
+    depends on NBP_CLONE
+    default y
+    help
+        Boot-loop safety net. At app_main start, check esp_reset_reason()
+        and a "boot_pending" flag in NVS (namespace nbp_boot). If the
+        previous run set the flag and this boot was triggered by a
+        crash-class reset (panic, INT/TASK/WDT, brownout), force-disable
+        the clone target (clone_config: enabled=false) before
+        ble_clone::init() runs, so the next reboot does not repeat the
+        same crash path.
+
+        The flag is rearmed on every boot and cleared by an esp_timer
+        one-shot after CONFIG_NBP_CLONE_BOOT_GUARD_SECS seconds of
+        uptime. The user can re-enable clone via POST /clone after
+        fixing the underlying issue.
+
+        Turn off if you'd rather have the device keep retrying clone
+        across crashes (e.g. you trust the upstream and want to ride out
+        transient panics).
+
+config NBP_CLONE_BOOT_GUARD_SECS
+    int "Clone: boot-guard stable-uptime window (seconds)"
+    depends on NBP_CLONE_BOOT_GUARD
+    default 60
+    range 10 600
+    help
+        How long the device must stay up without a crash-class reset
+        before the boot-pending flag is cleared. A panic that happens
+        after this window does not trigger the force-disable path; the
+        problem is treated as runtime, not boot-time.
+
+config NBP_CLONE_MAX_CHARS
+    int "Clone: max characteristics to mirror"
+    depends on NBP_CLONE
+    default 64
+    range 8 256
+    help
+        Caps the local GATT-DB attribute table. Each slot also reserves
+        a value-cache buffer (NBP_CLONE_VALUE_CACHE_BYTES below). Bumps
+        BSS by ~(cache_bytes + 40) per slot.
+
+config NBP_CLONE_VALUE_CACHE_BYTES
+    int "Clone: per-char cached value buffer (bytes)"
+    depends on NBP_CLONE
+    default 64
+    range 20 244
+    help
+        Size of the per-characteristic read cache. The first read from a
+        local central hits this cache so HA's GATT connect doesn't stall
+        on N synchronous upstream reads. Writes invalidate the cache.
+
+config NBP_SMP
+    bool "Enable central-side SMP / static-passkey pairing support"
+    default y
+    select BT_NIMBLE_SECURITY_ENABLE if BT_NIMBLE_ENABLED
+    select BT_NIMBLE_SM_LEGACY        if BT_NIMBLE_ENABLED
+    select BT_NIMBLE_SM_SC            if BT_NIMBLE_ENABLED
+    select BT_NIMBLE_NVS_PERSIST      if BT_NIMBLE_ENABLED
+    help
+        Compile in NimBLE Security Manager + bond storage. Required for
+        peripherals that demand a paired+encrypted link with a static
+        passkey (Victron SmartShunt, some BMS variants). On first
+        connect the proxy auto-pairs using the passkey configured via
+        POST /clone?passkey=NNNNNN (default 123456, NVS-persisted,
+        runtime-mutable). The bond is stored in NVS so subsequent
+        connects reuse it.
+
+        Disable for a smaller central-only build (~5 KB binary + a few
+        hundred bytes of NVS). With this off, peers that require
+        encryption will return an authentication-required error on
+        their characteristics; reads/writes/notifies on non-encrypted
+        chars still work normally.
+
+config NBP_DEVICES_PANEL
+    bool "Web UI: live device table (/devices + dashboard table)"
+    default y
+    help
+        Track every unique MAC the scanner sees in a 64-entry table
+        (RSSI, last local name, cumulative adv count, last-seen
+        timestamp; LRU-by-last_ms eviction). Exposes it as a JSON
+        endpoint at /devices and renders a sortable table below the
+        rate chart on the dashboard.
+
+        Costs ~12 KB BSS (two 3 KB DeviceRow arrays + 6 KB JSON
+        scratch buffer) plus one extra mutex op per advertisement.
+        Disable for a slimmer build that keeps the rate chart but
+        drops the per-device view.
+
+config NBP_BTHOME
+    bool "Web UI: decode BTHome v2 service-data adverts (/devices column)"
+    depends on NBP_DEVICES_PANEL
+    default y
+    help
+        Decode BTHome v2 (https://bthome.io) service-data
+        advertisements (16-bit UUID 0xFCD2) inline in the scan
+        callback and surface the most recent reading (temperature,
+        humidity, battery, voltage, illuminance, motion, button,
+        power, CO2, packet id) as a "BTHome" column in the existing
+        /devices table on the dashboard.
+
+        Encrypted BTHome frames are detected and marked but not
+        decrypted — per-device key configuration is not yet
+        implemented. Unrecognized object IDs abort the rest of that
+        frame (BTHome has no separators) but preserve any fields
+        already decoded before the unknown ID.
+
+        Costs ~1.5 KB BSS (32-entry cache + scratch) plus one
+        optional mutex op per advert (only when 0xFCD2 service data
+        is present). The raw-advertisement forwarding path to Home
+        Assistant is unchanged — this is a parallel local-display
+        path.
+
+config NBP_DEV_DETAILS
+    bool "Web UI: enrich /devices with appearance, connectable, vendor tag"
+    depends on NBP_DEVICES_PANEL
+    default y
+    help
+        Decode the extra fields each advertisement carries beyond
+        MAC + name + RSSI: GAP Appearance (AD 0x19, rendered as an
+        emoji prefix on the name), connectable PDU flag (used to hide
+        the clone button for broadcast-only sensors / beacons), and
+        a vendor / class tag derived from manufacturer company ID
+        (Apple Continuity subtypes, Microsoft, Samsung, Google, Sony,
+        Bose, Sonos, Tile, Ruuvi, Victron, Xiaomi, Anker, Nordic,
+        Espressif, Garmin, LG, Sennheiser, iBeacon, AltBeacon) or
+        16-bit service UUID (BTHome, FastPair, Eddystone, ENS,
+        MiBeacon, SwitchBot, Battery, EnvSense, HID, HeartRate,
+        Cycling, DevInfo).
+
+        Costs ~1 KB BSS (4 bytes × 64 rows + label tables in flash)
+        plus a small AD walk per advertisement. Disable for a slim
+        build that keeps just MAC / name / RSSI / counts in the
+        device table; the address-type column derived client-side
+        from the MAC stays either way.
+
+endif # NBP_BLE
+
+config NBP_WEB_CONSOLE
+    bool "Web UI: device log mirror (/log + on-page console)"
+    default y
+    help
+        Tee esp_log_set_vprintf into a ring buffer and stream it to
+        the dashboard. /log?since=N returns new bytes via chunked
+        encoding; the page polls every 500 ms and renders ANSI
+        colors via ansi_up. UART/JTAG output is unaffected — this
+        is purely a copy.
+
+        Ring sizes itself from CONFIG_BT_NIMBLE_LOG_LEVEL_DEBUG:
+        64 KiB with NimBLE DEBUG on, 8 KiB otherwise. The 64 KiB
+        path is the dashboard's largest BSS consumer; disable here
+        if you don't need the web console (UART logging stays).
+
+endmenu

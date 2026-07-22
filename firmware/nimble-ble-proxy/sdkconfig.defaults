@@ -1,0 +1,173 @@
+# BLE: NimBLE host, central+observer only (no peripheral, no broadcaster).
+# CONFIG_BT_ENABLED is NOT set here on purpose — the NBP_BLE master gate
+# (main/Kconfig.projbuild) `select`s it when BLE is on, and leaves it off
+# (→ NimBLE stack not compiled) when NBP_BLE=n. The host-choice + tuning
+# below only take effect while BT_ENABLED is on (the BT_HOST choice is
+# hidden otherwise), so they stay here inert in a BLE-free build.
+CONFIG_BT_BLUEDROID_ENABLED=n
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_BT_NIMBLE_ROLE_CENTRAL=y
+CONFIG_BT_NIMBLE_ROLE_OBSERVER=y
+CONFIG_BT_NIMBLE_ROLE_BROADCASTER=y
+# Broadcaster role compiled in only to satisfy NimBLE-Cpp's
+# NimBLEServer.cpp: it unconditionally references m_advertiseOnDisconnect,
+# which is gated on BLE_ROLE_BROADCASTER && !BLE_EXT_ADV. We never call
+# ble_gap_adv_start, so the radio stays in central-only mode at runtime.
+# Peripheral role MUST be on even though we never advertise — NimBLE's
+# ATT opcode dispatch table guards BLE_ATT_OP_NOTIFY_REQ (0x1B) +
+# INDICATE_REQ behind `#if MYNEWT_VAL(BLE_GATTS)`. The "SVR" handler
+# is what processes notifications received *by the central from the
+# peripheral*. With peripheral=n, BT_NIMBLE_GATT_SERVER's kconfig is
+# hidden → MYNEWT_VAL_BLE_GATTS=0 → dispatch table strips the 0x1B
+# entry → incoming notify ACL packets are silently dropped at the
+# ATT layer, never reaching ble_gap_notify_rx_event or any listener.
+# (See ble_att.c:62-80, ble_att_svr.c:2972.)
+# Discovered 2026-05-26 by capturing raw ACL RX bytes — notify PDUs
+# arrived from fugu-fry but BLE_GAP_EVENT_NOTIFY_RX never fired.
+CONFIG_BT_NIMBLE_ROLE_PERIPHERAL=y
+CONFIG_BT_NIMBLE_GATT_SERVER=y
+# Required for NimBLE-CPP's NimBLEServer::start() path: without this,
+# ble_gatts_reset() does NOT free the svc_entries list, so the second
+# call to ble_svc_gap_init() (triggered by resetGATT during the first
+# server start) hits SYSINIT_PANIC_ASSERT at ble_svc_gap.c:395 because
+# ble_gatts_add_svcs returns EALREADY. With DYNAMIC_SERVICE=y, the
+# reset actually clears the table and re-init succeeds. Verified
+# against the Victron SmartShunt clone bring-up, 2026-05-26.
+CONFIG_BT_NIMBLE_DYNAMIC_SERVICE=y
+# NimBLE connection slots. Trimmed 9->4 to reclaim internal DRAM: this is
+# a no-PSRAM S3, and 9 links (host + controller per-link buffers) left only
+# ~42 KB free heap, too fragmented for api_server's 8 KB per-connection task
+# stack (xTaskCreate failures → HA reconnect storm → BLE-scan/coex churn).
+# With NBP_CLONE=y one slot is the clone upstream, leaving 3 for HA-proxy
+# GATT links. MUST stay in sync with proxy::MAX_CONNECTIONS
+# (include/proxy_config.h) and BluetoothConnectionsFreeResponse.allocated
+# max_count (components/api_proto/api_subset.options). NIMBLE_MAX_CONNECTIONS
+# (nimble-cpp) is a non-prompt symbol that auto-tracks this one.
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=4
+# NimBLE host at INFO; flip to LOG_LEVEL_DEBUG to recompile with LOGD
+# calls when investigating wire-level issues — but it costs ~40 KB BSS
+# (string literals + 64 KiB web console ring) and the runtime DEBUG-only
+# output rarely tells us more than the existing GAP/GATT "procedure
+# initiated" INFO lines.
+CONFIG_BT_NIMBLE_LOG_LEVEL_INFO=y
+CONFIG_BT_NIMBLE_LOG_LEVEL=1
+# BLE controller activity slots = connections + scan + adv. With 4 conns
+# that's 4 + 1 scan + 1 adv = 6 (the S3 default). Each activity reserves
+# controller RAM, so this must track MAX_CONNECTIONS back down from 10.
+CONFIG_BT_CTRL_BLE_MAX_ACT=6
+# Host buffer pools, trimmed for the smaller connection count. ACL pool
+# 24->12 (~3 KB). Left at defaults: HCI event buffers (HI=30/LO=8) — they
+# back adv-report bursts during scan forwarding, so not worth risking for
+# the small saving. Bump ACL back toward 24 if you proxy high-throughput
+# GATT (notify floods) across several links at once.
+CONFIG_BT_NIMBLE_ACL_BUF_COUNT=12
+# SMP + bonding: the SECURITY_ENABLE / SM_LEGACY / SM_SC / NVS_PERSIST
+# flags are selected (or not) by main/Kconfig.projbuild's
+# NBP_SMP option, default y. MAX_BONDS is set
+# unconditionally; it's ignored at compile time when SECURITY_ENABLE=n.
+CONFIG_BT_NIMBLE_MAX_BONDS=4
+CONFIG_BT_NIMBLE_EXT_ADV=n
+CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE=5120
+CONFIG_BT_NIMBLE_HOST_BASED_PRIVACY=n
+# Disable BLE 5 PHY features in LL_FEATURE_REQ. With them on, BLE-4.x
+# peers (ANT BMS family) hit BLE_ERR_UNSUPP_REM_FEATURE during MTU
+# exchange — non-fatal but noisy. Tested in
+# scripts/ant-probe/proxy-trace-phy-debug.log: re-enabling did not
+# change notify behavior on ANT, just put the error back.
+CONFIG_BT_NIMBLE_50_FEATURE_SUPPORT=y
+CONFIG_BT_NIMBLE_LL_CFG_FEAT_LE_2M_PHY=n
+CONFIG_BT_NIMBLE_LL_CFG_FEAT_LE_CODED_PHY=n
+
+# NimBLE-Cpp at INFO for shipped builds. Flip to
+# CONFIG_NIMBLE_CPP_LOG_LEVEL_DEBUG=y to surface NimBLE-Arduino wrapper
+# state (connect, MTU, discovery callbacks) when investigating. NimBLE
+# host's per-byte HCI dump (CONFIG_BT_NIMBLE_LOG_LEVEL_DEBUG=y via
+# menuconfig) is a heavy binary-size + runtime-cost — only enable when
+# capturing a fresh wire trace.
+CONFIG_NIMBLE_CPP_LOG_LEVEL_INFO=y
+
+# Experiment "host pinning + mbuf bump" reverted — see FINDINGS.md.
+# Setting BT_NIMBLE_PINNED_TO_CORE_1 + doubling MSYS pools caused ANT
+# BMS supervision timeout (0x208) mid-discovery. NimBLE host on CPU 1
+# competes with httpd + api_client tasks; controller stays on CPU 0
+# but the host-controller IPC across cores adds latency that the
+# ANT BMS doesn't tolerate.
+
+# Networking: enough sockets for the worst-case mix —
+#   1 api_server listen + up to 4 api clients (HA + CLI)
+#   3 OTA httpd (1 listen + 2 clients)
+#   1-2 mDNS (v4/v6)
+#   1 SNTP / DHCP renew transients
+#   plus headroom for clone.mirror upstream and any in-flight close()
+# 8 was right on the edge and tipped over once HA + a browser tab were
+# both live; 16 leaves ~6 slots of slack with no measurable RAM cost.
+CONFIG_LWIP_MAX_SOCKETS=16
+CONFIG_LWIP_SO_REUSE=y
+
+# Task watchdog generous enough for BLE scan callbacks + GATT discovery bursts.
+# 30s gives the clone supervisor headroom for long peripheral discoveries
+# (some BMSes walk 60+ characteristics × ~80ms per round-trip).
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=30
+
+# Runtime stats so /stats.json can report per-core CPU%. TRACE_FACILITY
+# enables uxTaskGetSystemState; GENERATE_RUN_TIME_STATS makes
+# TaskStatus_t.ulRunTimeCounter valid. Overhead is a single
+# esp_timer read per context switch — negligible.
+CONFIG_FREERTOS_USE_TRACE_FACILITY=y
+CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y
+
+# Power management: esp_pm_configure() drives CPU frequency from the
+# /cpufreq endpoint and the runtime light-sleep toggle. Light sleep is
+# only effective with tickless idle on — without it the 1 ms FreeRTOS
+# tick interrupt wakes both cores constantly and the longest nap is
+# ~1 ms, so we enable both together.
+CONFIG_PM_ENABLE=y
+CONFIG_FREERTOS_USE_TICKLESS_IDLE=y
+CONFIG_FREERTOS_IDLE_TIME_BEFORE_SLEEP=3
+
+# Logging: info level by default and at compile time. To capture
+# NimBLE host DEBUG via runtime /level?nimble=4, flip
+# CONFIG_LOG_MAXIMUM_LEVEL_DEBUG=y — without it, LOG_LEVEL_MAX caps
+# esp_log_level_set("NimBLE", DEBUG) at INFO even when
+# CONFIG_BT_NIMBLE_LOG_LEVEL_DEBUG=y compiled the LOGD calls in.
+# Symptom when disabled: capture_proxy.py runs produce ~3 KB log files
+# instead of ~110 KB; ACL RX bytes never visible.
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_LOG_MAXIMUM_LEVEL_INFO=y
+# ANSI color escapes in log lines — rendered by the web console via
+# ansi_up. Harmless on a serial terminal that ignores escapes.
+CONFIG_LOG_COLORS=y
+
+# Custom partition table (factory app, nvs only — no OTA in v1).
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# ESP32-S3 DevKitC ships with 8 MB flash by default. The custom partition
+# table reserves 2 MB for the factory app, which doesn't fit in IDF's
+# 2 MB default.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="4MB"
+
+# C++ exceptions disabled — IDF default; cheaper code.
+CONFIG_COMPILER_CXX_EXCEPTIONS=n
+CONFIG_COMPILER_CXX_RTTI=n
+
+# clone bring-up — turn on by default during dev so the build is testable
+CONFIG_NBP_CLONE=y
+CONFIG_NBP_CLONE_MAX_CHARS=64
+CONFIG_NBP_CLONE_VALUE_CACHE_BYTES=64
+
+# Feature gates that used to be set via menuconfig only — pinned here so a
+# `rm sdkconfig && idf.py reconfigure` (or a fresh checkout) can't silently
+# drop them. NBP_NAT_ROUTER `select`s LWIP_IP_FORWARD / LWIP_IPV4_NAPT /
+# _NAPT_PORTMAP and the NBP_NAT_AP_* defaults; NBP_WS_PROXY `select`s
+# HTTPD_WS_SUPPORT. AP SSID/PSK/IP are runtime-overridable via POST /nat
+# (NVS), so the compile-time defaults here are just the cold-boot values.
+CONFIG_NBP_NAT_ROUTER=y
+CONFIG_NBP_BLE_AUTO_OFF=y
+CONFIG_NBP_BLE_AUTO_OFF_IDLE_SECS=30
+CONFIG_NBP_WS_PROXY=y
+CONFIG_NBP_LIVENESS_WDT=y
+CONFIG_NBP_LIVENESS_INTERVAL_SECS=30
+CONFIG_NBP_LIVENESS_THRESHOLD=6
+
