@@ -338,6 +338,13 @@ curl --data-binary @build/nimble_ble_proxy.bin http://192.168.1.42/update
 ok: wrote 1284496 bytes to ota_1, rebooting
 ```
 
+The board reboots into the new firmware on its own, and Home Assistant
+reconnects without help — expect a gap of a few seconds.
+
+> **There is no upload button in the web dashboard.** Updating is command-line
+> only. The dashboard does show the exact command in its footer, with your
+> device's address already filled in, so you can copy it straight from there.
+
 ---
 
 ## Adding the proxy to Home Assistant

@@ -342,6 +342,14 @@ curl --data-binary @build/nimble_ble_proxy.bin http://192.168.1.42/update
 ok: wrote 1284496 bytes to ota_1, rebooting
 ```
 
+La carte redémarre seule sur le nouveau firmware, et Home Assistant se
+reconnecte sans intervention — comptez quelques secondes de coupure.
+
+> **Il n'y a pas de bouton de téléversement dans le tableau de bord.** La mise à
+> jour se fait uniquement en ligne de commande. Le tableau de bord affiche
+> toutefois la commande exacte en pied de page, avec l'adresse de votre appareil
+> déjà renseignée : vous pouvez la copier telle quelle.
+
 ---
 
 ## Ajouter le proxy à Home Assistant
