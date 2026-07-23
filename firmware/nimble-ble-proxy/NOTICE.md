@@ -28,7 +28,7 @@ remain under their original MIT terms.
 
 ## What was changed relative to upstream
 
-Exactly one source modification, needed to build on Windows:
+One source modification, needed to build on Windows, plus one file rename:
 
 - `components/api_proto/CMakeLists.txt` — the nanopb generator was invoked as
   hard-coded `python3`, which does not exist as an executable on Windows (it
@@ -37,7 +37,14 @@ Exactly one source modification, needed to build on Windows:
   the standard IDF idiom `idf_build_get_property(python PYTHON)`.
 
   This is a portability fix, not a functional change — behaviour on Linux and
-  macOS is unchanged. It is a good candidate for an upstream pull request.
+  macOS is unchanged. Submitted upstream as
+  [fl4p/nimble-ble-proxy-esphome#1](https://github.com/fl4p/nimble-ble-proxy-esphome/pull/1).
+
+- `README.md` → `README-DETAIL.md` — **renamed, contents untouched.** The
+  upstream author's document is a technical reference, not a build guide, and
+  people landing in this folder needed step-by-step instructions instead. The
+  new `README.md` / `README-FR.md` are ours; his text is preserved verbatim
+  under the new name.
 
 ## What was NOT vendored
 

@@ -30,7 +30,7 @@ by accident. No owner credentials are required or used.
    Assistant. A proxy running the **NimBLE** stack is strongly recommended —
    see [Why NimBLE](#why-nimble). This repository ships a
    [ready-to-build firmware](firmware/nimble-ble-proxy/) and its
-   [build guide](docs/firmware.md).
+   [build guide](firmware/nimble-ble-proxy/README.md).
 2. **The official vendor dongle must be unplugged.** It holds a permanent BLE
    connection to the mailbox, which makes the mailbox invisible to every other
    client, including this integration.
@@ -39,7 +39,7 @@ by accident. No owner credentials are required or used.
 
 ### 1. Firmware (once)
 
-Build and flash the Bluetooth proxy — see **[docs/firmware.md](docs/firmware.md)**
+Build and flash the Bluetooth proxy — see **[firmware/nimble-ble-proxy/README.md](firmware/nimble-ble-proxy/README.md)**
 and the **[hardware specification](docs/hardware.md)**.
 
 Then add the proxy to Home Assistant: it announces itself over mDNS and is

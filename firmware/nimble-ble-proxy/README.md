@@ -1,211 +1,360 @@
-# nimble-ble-proxy
+> 🇫🇷 **[Version française](README-FR.md)**
 
-A standalone ESP32-S3 firmware that speaks the [aioesphomeapi](https://github.com/esphome/aioesphomeapi)
-plaintext protocol so unmodified Home Assistant treats it as a regular ESPHome
-Bluetooth proxy — but with **[NimBLE](https://github.com/h2zero/esp-nimble-cpp)**
-as the BLE backend instead of Bluedroid.
+# Building and installing the Bluetooth proxy — step by step
 
-I started this little project because the regular esphome proxy didn't connect
-to my sketchy Bluetooth BMS, so I [vide-coded](docs/vibe.md) my own. This began as fun-project, and it
-has become a more stable, complete and energy saving Wifi/Ble/Repeater/Bridge than other esp32 NAT routers I have used.
-Specifically it is or can be:
+This folder holds the firmware that lets Home Assistant talk to the mailbox.
+It runs on an **ESP32-S3** and presents itself to Home Assistant as a standard
+**ESPHome Bluetooth proxy** — but on the **NimBLE** stack instead of Bluedroid,
+which is precisely what makes this mailbox reachable at all.
 
-* Esphome BLE proxy, you can use it outside of esphome env with their client libr (`TODO`)
-* BLE cloner/repeater: connect to a device, copy all its ble services/characteristics and start advertising them and
-  passthrough all reads/writes/notifies. Useful for ble range extension without wifi.
-* BLE scanner: decodes BTHome enconded advertisement packages and looks up vendor detaisls
-* SoftAP NAT router with port-mappings
-* Many energy saving knobs to explore the power saving capabilities of an esp32/s3 chip
-* Boilerplate for any coex WiFi/Bluetooth projects with web-interface
+You need to do this **once**, before installing the Home Assistant integration.
+Plan for 30–45 minutes the first time, most of it spent installing ESP-IDF.
 
-## Why
+| | |
+|---|---|
+| Origin | [`fl4p/nimble-ble-proxy-esphome`](https://github.com/fl4p/nimble-ble-proxy-esphome), pinned commit — see [`NOTICE.md`](NOTICE.md) |
+| Author's own technical documentation | [`README-DETAIL.md`](README-DETAIL.md) — architecture, protocol, design notes |
+| Hardware to buy and its pitfalls | [`../../docs/hardware.md`](../../docs/hardware.md) |
 
-Home Assistant's ESPHome integration is the easy path to extending Bluetooth
-coverage: HA connects to an ESPHome device over native aioesphomeapi, asks it
-to scan, and pipes raw BLE advertisements + GATT operations through the
-device. ESPHome implements this on top of **Bluedroid**
-(`CONFIG_BT_BLUEDROID_ENABLED`), which is heavier and less flexible for
-raw-advertisement throughput than NimBLE — and locked into ESPHome's whole
-YAML/codegen/runtime stack.
+> **`README-DETAIL.md` is the upstream author's document**, kept verbatim. It
+> explains how the firmware works internally. The guide you are reading is ours
+> and only covers getting it built and running.
 
-This firmware is the minimum needed to look like an ESPHome Bluetooth proxy to
-HA, with none of the rest of ESPHome attached. The motivation is a lighter,
-more responsive BLE bridge under direct control, with room to layer custom
-scan-filtering, batching, or peripheral-specific logic later. To my knowledge
-nothing else does this on an ESP32 directly — `aioesphomeserver` (Python,
-alpha) and `bleak_esphome`/`habluetooth` (Python middleware) exist, but no
-native firmware.
+---
 
-## What it does
+## A. What you have to configure
 
-Implements just enough of the aioesphomeapi plaintext protocol that HA's
-client accepts the device as a Bluetooth proxy:
+Surprisingly little — **two values**:
 
-- **Handshake & housekeeping** — `Hello`, `Connect`, `Ping`, `DeviceInfo`,
-  `ListEntities`/`ListEntitiesDone`, `SubscribeLogs` (silently accepted).
-- **Bluetooth proxy surface** (~15 messages) —
-    - Raw advertisement subscribe/unsubscribe + batched
-      `BluetoothLERawAdvertisementsResponse` stream.
-    - Connection-slot bookkeeping
-      (`SubscribeBluetoothConnectionsFree` / `BluetoothConnectionsFreeResponse`).
-    - GATT connect / disconnect with MTU exchange.
-    - GATT service / characteristic / descriptor discovery (chunked).
-    - GATT read / write / notify (with CCCD subscription).
-- **Feature flags** advertised: `PASSIVE_SCAN | ACTIVE_CONNECTIONS | REMOTE_CACHING | RAW_ADVERTISEMENTS` (`0x27`).
-- **mDNS** — announces `_esphomelib._tcp` with the TXT records HA's discovery
-  flow expects (`platform=ESP32`, `network=wifi`, `mac=…`, `version=…`, etc.).
-- **9 concurrent BLE connections**, up to 4 concurrent API clients (e.g. HA
-  plus a CLI smoke test at the same time).
-- **HTTP OTA** on port 80 — `POST /update` writes the inactive OTA slot via
-  `esp_ota_*` and reboots into it.
-- **Optional clone mode** (`CONFIG_NBP_CLONE`) — mirror one BLE peripheral
-  as a local GATT server so multiple centrals (HA + a vendor app) share one
-  upstream link. Full spec in [`docs/clone.md`](docs/clone.md).
-- **Web dashboard** on port 80 — `/` serves an embedded HTML page with two
-  live charts (BLE activity, CPU + chip-temperature), a devices-seen table
-  with one-click clone, a streaming log console, and tunables for CPU
-  frequency, WiFi/BLE TX power, BLE scan duty, BLE advertising interval,
-  WiFi power-save listen interval, device hostname, and SMP passkey. Full
-  spec in [`docs/web-ui.md`](docs/web-ui.md).
-- **BLE-side HTTP transport** (`CONFIG_NBP_BLE_HTTPD`) — same dashboard,
-  same endpoints, reachable via a GATT request/response service when WiFi
-  isn't built in.
+| Parameter | Value | Where |
+|---|---|---|
+| WiFi SSID | your **2.4 GHz** network name | `include/wifi_creds.h` |
+| WiFi password | that network's password | `include/wifi_creds.h` |
 
-**Out of scope** (by design): sensors, switches, lights, voice assistant,
-Noise encryption, password auth (deprecated in ESPHome 2026.1), bonding
-replication across clones, cache management. HA never asks for these
-because the feature flags don't advertise them. SMP / static-passkey
-pairing for paired upstream peripherals (e.g. Victron SmartShunt) is in
-scope under `CONFIG_NBP_SMP`.
+Two frequent misunderstandings worth clearing up now:
 
-## Architecture
+- **The mailbox's Bluetooth address is _not_ configured here.** The firmware is
+  a generic proxy: it relays whatever Bluetooth Home Assistant asks for. The
+  mailbox address is chosen later, in Home Assistant, when you add the Boks
+  integration (it is even discovered for you).
+- **2.4 GHz is mandatory.** The ESP32-S3 has no 5 GHz radio. If your access
+  point publishes both bands under one SSID, that is fine — the board will
+  associate on 2.4 GHz.
 
-```
-main/                      app_main; orders bring-up of every component
-components/
-├── api_proto/             nanopb-generated bindings for the api.proto subset
-├── api_server/            plaintext frame codec, handshake, BT request handlers,
-│                          dashboard endpoints (stats / log / level / txpower /
-│                          cpufreq / scan / hostname / wifips / advitvl / trace
-│                          / reboot / devices), embedded web/index.html
-├── ble_backend/           NimBLE wrappers — scanner, connection slots, GATT
-│                          discovery, adv interval state, SMP passkey holder
-├── ble_clone/             optional (CONFIG_NBP_CLONE) — supervisor task +
-│                          upstream client + local GATT mirror + /clone endpoint
-├── ble_httpd/             optional (CONFIG_NBP_BLE_HTTPD) — GATT request/
-│                          response service that routes the same dashboard
-│                          endpoints over Web Bluetooth
-├── mdns_announce/         _esphomelib._tcp registration
-├── ota/                   HTTP POST /update via esp_ota_*; owns the shared
-│                          httpd that the dashboard piggybacks on
-└── wifi_sta/              STA bring-up from include/wifi_creds.h; reads
-                           listen_interval from NVS for power save
-include/
-├── proxy_config.h         tunables (max_conn, scan timing, feature flags,
-│                          runtime hostname accessor)
-└── wifi_creds.h.example   SSID/PSK template — real file is gitignored
-web/
-└── index.html             dashboard single-source: HTTP fetch OR Web
-                           Bluetooth transport, auto-detected at boot
-```
+Optional, changeable later without reflashing: the device hostname
+(`nimble-proxy` by default), via `POST /hostname?val=...`.
 
-The `api_server` and `ble_backend` components are decoupled — `ble_backend`
-publishes via a function-pointer seam (`publish::install`) so it doesn't
-depend on the API server. `ble_clone` and `ble_httpd` plug into the same
-NimBLE singleton without a circular dep on `api_server`.
+---
 
-## Build profiles
+## B. Where to put them
 
-These Kconfig switches under `nimble-ble-proxy` choose what gets compiled in:
+The credentials file does not exist yet — the repository ships a template, and
+the real file is deliberately ignored by git so your password never lands in a
+commit:
 
-| Kconfig                    | Default | What it adds                                                                                                                                                                                                                                                                                                                                                                    |
-|----------------------------|---------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `CONFIG_NBP_WIFI`          | `y`     | STA + mDNS + dashboard httpd + aioesphomeapi server + embedded dashboard HTML                                                                                                                                                                                                                                                                                                   |
-| `CONFIG_NBP_OTA`           | `y`     | `POST /update` HTTP OTA endpoint. Turn off for a lockdown build where firmware updates require serial.                                                                                                                                                                                                                                                                          |
-| `CONFIG_NBP_AP_FALLBACK`   | `n`     | When STA can't associate within `CONFIG_NBP_AP_FALLBACK_SECS`, fall back to a SoftAP at `<hostname>-setup` (192.168.4.1) with a one-page form that POSTs credentials to NVS and reboots. Replaces edit-`wifi_creds.h`-and-reflash for first-time setup.                                                                                                                         |
-| `CONFIG_NBP_NAT_ROUTER`    | `n`     | SoftAP + NAPT out the STA uplink, with `/nat` (status + AP creds) and `/portmap` (inbound forwards). `/nat` also lists connected clients — MAC, leased IP, RSSI, and DHCP hostname (captured via a custom lwIP hook; see `components/dhcps_hostname`). Shown in the dashboard NAT panel.                                                                                        |
-| `CONFIG_NBP_BLE_HTTPD`     | `n`     | GATT request/response service (Web Bluetooth dashboard)                                                                                                                                                                                                                                                                                                                         |
-| `CONFIG_NBP_CLONE`         | `n`     | Clone supervisor, upstream client, local GATT mirror, `/clone` endpoint                                                                                                                                                                                                                                                                                                         |
-| `CONFIG_NBP_SMP`           | `n`     | Static-passkey pairing as central (paired upstream peripherals). Passkey is set via `POST /clone?passkey=N`                                                                                                                                                                                                                                                                     |
-| `CONFIG_NBP_DEVICES_PANEL` | `y`     | 64-entry devices-seen table + `/devices` + dashboard table                                                                                                                                                                                                                                                                                                                      |
-| `CONFIG_NBP_WEB_CONSOLE`   | `y`     | 64 KiB log ring + `/log` + on-page console                                                                                                                                                                                                                                                                                                                                      |
-| `CONFIG_NBP_BLE_AUTO_OFF`  | `n`     | Supervisor task that quiesces the BLE radio when idle: pauses the central scan when no API client / GATT link / clone needs it, and suspends advertising when WiFi is up and no central/clone needs the peripheral (kept on when WiFi is down so the BLE dashboard stays reachable). Idle grace `CONFIG_NBP_BLE_AUTO_OFF_IDLE_SECS` (default 30 s); re-activation is immediate. |
-
-Two common profiles:
-
-- **WiFi build** (default `sdkconfig.defaults`) — full dashboard via HTTP,
-  HA proxy active. ~1.18 MB.
-- **BLE-only build** (`sdkconfig.defaults.bletest`) — `CONFIG_NBP_WIFI=n`,
-  `CONFIG_NBP_BLE_HTTPD=y`. Same dashboard over Web Bluetooth. ~0.62 MB.
-
-## Build
-
-ESP-IDF 5.5 (5.x should work). Component manager pulls
-[`h2zero/esp-nimble-cpp ^2.5.0`](https://github.com/h2zero/esp-nimble-cpp)
-and `nanopb`. A small patch is auto-applied to the managed NimBLE-CPP
-header by `components/api_server/CMakeLists.txt` (adds `setNotifyCallback`
-so notify registration can skip the CCCD write — see clone pitfall 13.x).
-
-```sh
+```bash
+cd firmware/nimble-ble-proxy
 cp include/wifi_creds.h.example include/wifi_creds.h
-# edit SSID / PSK
+```
+
+Then edit `include/wifi_creds.h`. It should end up looking like this:
+
+```c
+#pragma once
+
+#define WIFI_SSID     "my-iot-network"
+#define WIFI_PASSWORD "correct-horse-battery-staple"
+```
+
+That is the whole configuration. Everything else has a sane default.
+
+---
+
+## C. Building
+
+### C.1 — Install the tools
+
+| Tool | Version | Notes |
+|---|---|---|
+| **ESP-IDF** | **v5.5** (any 5.x should work) | [official installation guide](https://docs.espressif.com/projects/esp-idf/en/v5.5/esp32s3/get-started/) |
+| **git** | any | to fetch one dependency |
+| **Python** | comes with ESP-IDF | you only add one package |
+
+ESP-IDF brings its own compiler, its own Python environment and `esptool`, so
+there is nothing else to install by hand.
+
+**Every command below must run in an ESP-IDF shell**, i.e. after sourcing the
+environment:
+
+```bash
+. ~/esp/esp-idf/export.sh          # Linux / macOS
+```
+```powershell
+. $env:USERPROFILE\esp\esp-idf\export.ps1   # Windows PowerShell
+```
+
+You know it worked when `idf.py --version` answers.
+
+### C.2 — Fetch nanopb
+
+The protobuf bindings are generated at build time by **nanopb**, which is not
+bundled here (it carries its own license). Clone it exactly where the build
+expects it:
+
+```bash
+cd firmware/nimble-ble-proxy/components/api_proto
+git clone --depth 1 https://github.com/nanopb/nanopb.git nanopb
+cd ../..
+```
+
+Reference build used nanopb commit `d21fa5084287ab67da2f166f4def045bedcb535e`.
+
+Skip this and the build stops early with a message that tells you exactly this:
+`nanopb not vendored at …`.
+
+### C.3 — Add the one Python package
+
+```bash
+pip install protobuf
+```
+
+Run it **inside the ESP-IDF environment** (after `export.sh`/`export.ps1`), so
+it lands in IDF's virtualenv rather than your system Python.
+
+### C.4 — Select the chip — as its own command
+
+```bash
 idf.py set-target esp32s3
+```
+
+Then **check it actually took**:
+
+```bash
+grep CONFIG_IDF_TARGET= sdkconfig
+# expected: CONFIG_IDF_TARGET="esp32s3"
+```
+
+> ⚠️ **Do not chain this with the build.** If `set-target` is combined with a
+> build that fails during *configure* (a missing nanopb, for instance), the
+> target silently stays at the default `esp32`. Every later build then
+> *succeeds* while producing an image for the wrong chip, and you only find out
+> at flash time:
+>
+> ```
+> A fatal error occurred: This chip is ESP32-S3, not ESP32. Wrong --chip argument?
+> ```
+>
+> If that happens: `idf.py fullclean`, then set the target again and re-check.
+
+### C.5 — Build
+
+```bash
 idf.py build
-idf.py -p /dev/cu.usbmodem1101 flash monitor
 ```
 
-After the first serial flash, subsequent updates can go over WiFi:
+The first build takes several minutes (it compiles ESP-IDF itself and downloads
+the NimBLE component). Subsequent builds take seconds. A successful run ends
+with something like:
 
-```sh
-curl --data-binary @build/nimble_ble_proxy.bin http://<device-ip>/update
+```
+Project build complete. To flash, run:
+ idf.py flash
+nimble_ble_proxy.bin binary size 0x139300 bytes.
+Smallest app partition is 0x1e0000 bytes. 0xa6d00 bytes (35%) free.
 ```
 
-Or, for a BLE-only build (no WiFi):
+The firmware is now at `build/nimble_ble_proxy.bin` — around **1.28 MB**.
 
-```sh
-idf.py -DSDKCONFIG_DEFAULTS='sdkconfig.defaults;sdkconfig.defaults.bletest' fullclean build
+---
+
+## D. Checking the firmware before you flash it
+
+Three quick checks catch the mistakes that are painful to diagnose later.
+
+**1. The right BLE stack** — this is the entire point of this firmware:
+
+```bash
+grep -E "CONFIG_BT_(NIMBLE|BLUEDROID)_ENABLED" sdkconfig
+```
+```
+CONFIG_BT_NIMBLE_ENABLED=y
+# CONFIG_BT_BLUEDROID_ENABLED is not set     ← Bluedroid must be absent
 ```
 
-Partitions: dual-OTA on 8 MB flash (`ota_0` + `ota_1`, no factory slot). If
-both slots get bricked, re-flash via serial. A boot-guard
-(`CONFIG_NBP_CLONE_BOOT_GUARD`) disables clone on the next boot if the
-previous one panicked early, so a misconfigured clone target can't lock
-the device into a reboot loop.
+If Bluedroid appears here, the build will misbehave with this mailbox exactly
+the way the stock ESPHome proxy does.
 
-## Verify
+**2. The right chip:**
 
-Run [`scripts/test_proxy_connect.py`](scripts/test_proxy_connect.py) to drive
-the device with `aioesphomeapi` directly — it logs in, fetches `device_info`,
-subscribes to adverts, and prints the stream.
+```bash
+grep CONFIG_IDF_TARGET= sdkconfig
+# CONFIG_IDF_TARGET="esp32s3"
+```
 
-In HA, the proxy shows up under **Settings → Devices & services → Discovered**
-as an ESPHome device. Confirm, and it starts serving as a Bluetooth scanner
-allocation (visible via the `bluetooth/subscribe_connection_allocations`
-WebSocket call).
+**3. The binary exists and is plausible:**
 
-## State
+```bash
+ls -l build/nimble_ble_proxy.bin       # ~1.3 MB
+```
 
-End-to-end-verified against live Home Assistant:
+Post-flash verification is in section **E.4**.
 
-- mDNS discovery + handshake + DeviceInfo
-- 220–240 raw adverts/s from 10+ unique peripherals
-- Multi-client API server (HA + smoke test simultaneously)
-- 9-slot scanner allocation registered in HA's bluetooth registry
-- Routing wins against another Bluedroid proxy on the same LAN
-- HTTP OTA round-trip
-- Dashboard live in a phone browser (HTTP) and via a Web Bluetooth Chrome
-  page (BLE transport) against the same firmware
-- Clone-mode: ANT-BLE20PHUB BMS mirrored to batmon-ha (1:1 NOTIFY fan-out),
-  Victron SmartShunt under SMP static-passkey pairing
+---
 
-Bring-up notes, bugs hit, and resolutions are in [`FINDINGS.md`](FINDINGS.md).
-Deeper specs:
+## E. Installing it on the ESP32-S3
 
-- [`docs/web-ui.md`](docs/web-ui.md) — dashboard, every HTTP/BLE endpoint,
-  the boot order, and per-component cost breakdown.
-- [`docs/clone.md`](docs/clone.md) — clone-mode architecture, NimBLE
-  constraints discovered during bring-up, verification recipe.
+### E.1 — Pick the right USB port
 
-## License
+Most ESP32-S3 development boards expose **two USB-C ports**, and this trips up
+almost everyone:
 
-MIT.
+| Port | Silkscreen | Use it? |
+|---|---|---|
+| USB-to-serial bridge (CP210x, CH343…) | often `COM` or `UART` | ✅ **yes** — auto-reset works, flashing just runs |
+| The chip's native USB | often `USB` | ⚠️ avoid for the first flash |
+
+Plug into the **`COM`/UART** port and check that a serial device appeared:
+
+```bash
+ls /dev/ttyUSB* /dev/ttyACM*          # Linux
+ls /dev/cu.*                          # macOS
+```
+```powershell
+Get-CimInstance Win32_SerialPort | Select-Object DeviceID, Description   # Windows
+```
+
+You are looking for a line naming a serial bridge, for example
+`USB-Enhanced-SERIAL CH343 (COM12)` or `/dev/ttyUSB0`.
+
+*Nothing appears?* Try another USB cable first — charge-only cables with no data
+wires are the most common cause by far.
+
+### E.2 — Flash
+
+```bash
+idf.py -p /dev/ttyUSB0 flash        # Linux
+idf.py -p /dev/cu.usbserial-110 flash   # macOS
+idf.py -p COM12 flash               # Windows
+```
+
+This writes the bootloader, the partition table and the firmware. Expect
+roughly a minute, ending with:
+
+```
+Hash of data verified.
+Leaving...
+Hard resetting via RTS pin...
+```
+
+*If it fails with "Failed to connect … No serial data received"*, put the board
+into download mode by hand: **hold `BOOT`, tap `RST`, release `BOOT`**, then run
+the flash command again.
+
+### E.3 — Watch it boot
+
+```bash
+idf.py -p COM12 monitor        # Ctrl-] to quit
+```
+
+A healthy first boot prints, in order:
+
+```
+nimble-ble-proxy 0.1.0 booting
+wifi: connected, IP 192.168.1.42
+mdns: _esphomelib._tcp on nimble-proxy:6053 announced
+ota: OTA endpoint at http://nimble-proxy.local/update
+ble: NimBLE ready (max_conn=4, scan=30ms/60ms)
+```
+
+**Write down the IP address** — the next steps use it.
+
+*The board reboots in a loop instead?* Look for `Guru Meditation Error` in the
+log; the usual culprit on cheap boards is a PSRAM mismatch, covered in
+[hardware.md](../../docs/hardware.md).
+
+### E.4 — Verify it is really running
+
+From any machine on the same network:
+
+```bash
+curl http://192.168.1.42/stats.json
+```
+```json
+{"adverts":335,"heap":61660,"temp_c":44.5,"ble":true,"connections":0}
+```
+
+`"ble": true` and a rising `adverts` count mean the Bluetooth side is alive.
+The web dashboard at `http://192.168.1.42/` shows the same, plus every device
+seen with its signal strength — which is the tool you want when choosing where
+to put the board.
+
+### E.5 — Turn off the WiFi router mode
+
+The firmware can also act as a WiFi access point and router. **Switch that
+off**: here the board is only a bridge, and an access point steals airtime from
+Bluetooth on the single 2.4 GHz radio — it also tips the coexistence arbiter in
+WiFi's favour.
+
+```bash
+curl -X POST "http://192.168.1.42/nat?enabled=0"
+```
+```json
+{"ok":true}
+```
+
+The setting survives reboots.
+
+> Configuration endpoints need **`curl -X POST`**. A plain `curl` performs a GET
+> and merely reads the value back without changing anything — an easy half-hour
+> to lose.
+
+### E.6 — Later updates go over WiFi
+
+Once the firmware is on the board, the cable is no longer needed:
+
+```bash
+idf.py build
+curl --data-binary @build/nimble_ble_proxy.bin http://192.168.1.42/update
+```
+```
+ok: wrote 1284496 bytes to ota_1, rebooting
+```
+
+---
+
+## Adding the proxy to Home Assistant
+
+The firmware announces itself over mDNS as an ESPHome device. Home Assistant
+picks it up under **Settings → Devices & services**; confirm it — the API is
+plaintext, so there is no encryption key to enter.
+
+Once added, it registers as a Bluetooth scanner, and *that* is what lets the
+Boks integration reach the mailbox. Without this step the integration will never
+find it, however correctly it is installed.
+
+---
+
+## Useful endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /` | Web dashboard |
+| `GET /stats.json` | Health: heap, temperature, BLE counters |
+| `GET /devices` | Devices seen with RSSI — use this to choose a location |
+| `GET /log?since=0` | Firmware log, remotely |
+| `POST /level?nimble=<0..5>` | NimBLE log verbosity |
+| `POST /nat?enabled=0` | Disable the WiFi router mode |
+| `POST /update` | OTA update |
+| `POST /reboot` | Reboot |
+
+## Troubleshooting
+
+| Symptom | Cause |
+|---|---|
+| `nanopb not vendored at …` | Step **C.2** skipped |
+| `Python was not found` (Windows) | Not in an ESP-IDF shell — see **C.1** |
+| `This chip is ESP32-S3, not ESP32` | Target not set — see the warning in **C.4** |
+| `Failed to connect … No serial data received` | Wrong USB port (**E.1**), or use manual download mode (**E.2**) |
+| No serial port appears at all | Charge-only USB cable, or missing bridge driver |
+| Boot loop with `Guru Meditation` | Usually PSRAM — see [hardware.md](../../docs/hardware.md) |
+| Home Assistant never discovers it | mDNS blocked between VLANs; add the device by IP instead |

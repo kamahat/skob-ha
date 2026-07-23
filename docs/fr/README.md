@@ -31,7 +31,7 @@ propriétaire n'est requis ni utilisé.
    Assistant. Un proxy sur pile **NimBLE** est fortement recommandé — voir
    [Pourquoi NimBLE](#pourquoi-nimble). Ce dépôt fournit un
    [firmware prêt à compiler](../../firmware/nimble-ble-proxy/) et son
-   [guide de compilation](firmware.md).
+   [guide de compilation](../../firmware/nimble-ble-proxy/README-FR.md).
 2. **Le dongle officiel du fabricant doit être débranché.** Il maintient une
    connexion BLE permanente, ce qui rend la boîte invisible pour tout autre
    client, dont cette intégration.
@@ -40,7 +40,7 @@ propriétaire n'est requis ni utilisé.
 
 ### 1. Firmware (une fois)
 
-Compilez et flashez le proxy Bluetooth — voir **[firmware.md](firmware.md)** et
+Compilez et flashez le proxy Bluetooth — voir **[firmware/nimble-ble-proxy/README-FR.md](../../firmware/nimble-ble-proxy/README-FR.md)** et
 la **[spécification matérielle](hardware.md)**.
 
 Ajoutez ensuite le proxy à Home Assistant : il s'annonce en mDNS et est détecté
