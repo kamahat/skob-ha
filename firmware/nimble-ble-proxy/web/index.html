@@ -644,6 +644,8 @@ let g_ble = null;
 // chart (.nat-only) stays hidden. Sizing is deferred to here because the
 // container has zero width while hidden (chartW would go negative).
 let g_nat = null;
+// Handle for the /nat poll, so a 404 can stop it (see loadNat).
+let g_natTimer = null;
 function applyCaps(s) {
   if (g_ble === null && typeof s.ble !== 'undefined') {
     g_ble = !!s.ble;
@@ -969,7 +971,13 @@ async function tickDevices() {
 async function loadNat() {
   let nat;
   try { nat = await apiJson('GET /nat'); }
-  catch (e) { return; }
+  catch (e) {
+    // No /nat endpoint: built without CONFIG_NBP_NAT_ROUTER. It cannot appear
+    // later, so stop polling instead of 404ing the device every 3 s for the
+    // lifetime of the page — that floods the device log and wastes requests.
+    if (g_natTimer !== null) { clearInterval(g_natTimer); g_natTimer = null; }
+    return;
+  }
   document.getElementById('natpanel').classList.remove('hidden');
   document.getElementById('natssidlbl').textContent =
     nat.ssid + (nat.open ? ' (open)' : '');
@@ -1029,7 +1037,8 @@ function startPolling() {
   g_pollTimers.push(setInterval(tickLog,      500)); tickLog();
   g_pollTimers.push(setInterval(tickDevices, 1000)); tickDevices();
   // NAT status changes slowly (client joins, manual edits) — 3 s is plenty.
-  g_pollTimers.push(setInterval(loadNat,     3000)); loadNat();
+  g_natTimer = setInterval(loadNat, 3000);
+  g_pollTimers.push(g_natTimer); loadNat();
   // WiFi history is a device-side ring sampled every ~30 s; 15 s poll is ample.
   g_pollTimers.push(setInterval(tickWifiHist, 15000)); tickWifiHist();
 }
