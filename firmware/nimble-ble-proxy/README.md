@@ -355,9 +355,18 @@ Once the firmware is on the board, the cable is no longer needed. Rebuild,
 then update either way:
 
 **From the dashboard** — open `http://192.168.1.42/`, find the **firmware**
-group among the controls at the top, pick your `build/nimble_ble_proxy.bin`
-and press **upload & reboot**. It asks for confirmation, shows upload
-progress, then reloads the page once the device is back.
+group among the controls at the top, pick your firmware `.bin` and press
+**upload & reboot**. It asks for confirmation first, since flashing reboots
+the device.
+
+While the image is sent the controls lock and progress is shown:
+
+![The firmware group during an upload: the file picker is greyed out and the status reads "uploading 8%"](../../docs/img/dashboard-ota-uploading.png)
+
+Once the image is written the device answers and reboots; the page reloads
+itself a few seconds later:
+
+![The firmware group after a successful upload, showing in green "ok: wrote 1272256 bytes to ota_0, rebooting — reloading in 15 s"](../../docs/img/dashboard-ota-done.png)
 
 **From a terminal** — for scripted updates:
 

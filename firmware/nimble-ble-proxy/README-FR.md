@@ -361,9 +361,17 @@ puis mettez à jour au choix :
 
 **Depuis le tableau de bord** — ouvrez `http://192.168.1.42/`, repérez le
 groupe **firmware** parmi les réglages en haut de page, sélectionnez votre
-`build/nimble_ble_proxy.bin` et cliquez sur **upload & reboot**. Une
-confirmation est demandée, la progression s'affiche, puis la page se recharge
-une fois la carte revenue.
+fichier `.bin` et cliquez sur **upload & reboot**. Une confirmation est
+demandée d'abord, puisque le flash redémarre la carte.
+
+Pendant l'envoi, les contrôles se verrouillent et la progression s'affiche :
+
+![Le groupe firmware pendant un téléversement : le sélecteur de fichier est grisé et l'état indique « uploading 8% »](../../docs/img/dashboard-ota-uploading.png)
+
+Une fois l'image écrite, la carte répond puis redémarre ; la page se recharge
+d'elle-même quelques secondes plus tard :
+
+![Le groupe firmware après un téléversement réussi, affichant en vert « ok: wrote 1272256 bytes to ota_0, rebooting — reloading in 15 s »](../../docs/img/dashboard-ota-done.png)
 
 **Depuis un terminal** — pour les mises à jour scriptées :
 
