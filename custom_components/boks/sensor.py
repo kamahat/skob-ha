@@ -1,6 +1,8 @@
 """Capteurs Boks : batterie, RSSI, versions."""
 from __future__ import annotations
 
+from datetime import datetime
+
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
@@ -27,6 +29,8 @@ async def async_setup_entry(
             BoksRssiSensor(link),
             BoksVersionSensor(link, "firmware", "Firmware"),
             BoksVersionSensor(link, "software", "Software"),
+            BoksLastConnectedSensor(link),
+            BoksAddressSensor(link),
         ]
     )
 
@@ -84,3 +88,47 @@ class BoksVersionSensor(BoksEntity, SensorEntity):
     @property
     def native_value(self) -> str | None:
         return getattr(self._link.state, self._key)
+
+
+class BoksLastConnectedSensor(BoksEntity, SensorEntity):
+    """Horodatage du dernier lien GATT établi.
+
+    Sert surtout quand la connexion n'est pas maintenue : il dit de quand
+    datent les valeurs affichées.
+    """
+
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, link: BoksLink) -> None:
+        super().__init__(link, "last_connected")
+        self._attr_name = "Dernière connexion"
+
+    @property
+    def available(self) -> bool:
+        """Reste lisible hors connexion — c'est justement là qu'il sert."""
+        return self._link.state.last_connected is not None
+
+    @property
+    def native_value(self) -> datetime | None:
+        return self._link.state.last_connected
+
+
+class BoksAddressSensor(BoksEntity, SensorEntity):
+    """Adresse Bluetooth de la boîte."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:bluetooth"
+
+    def __init__(self, link: BoksLink) -> None:
+        super().__init__(link, "address")
+        self._attr_name = "Adresse BLE"
+
+    @property
+    def available(self) -> bool:
+        """Valeur de configuration : toujours connue."""
+        return True
+
+    @property
+    def native_value(self) -> str:
+        return self._link.address

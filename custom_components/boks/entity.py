@@ -33,5 +33,14 @@ class BoksEntity(Entity):
 
     @property
     def available(self) -> bool:
-        """Indisponible tant que la Boks n'est pas jointe."""
-        return self._link.state.connected
+        """Disponible dès qu'une valeur a été relevée au moins une fois.
+
+        Volontairement plus permissif que « le lien est up » : la connexion
+        n'est maintenue que si l'utilisateur le demande (switch « connexion
+        maintenue »), et sur un appareil à piles elle sera coupée la plupart du
+        temps. Faire disparaître les entités à chaque déconnexion viderait le
+        tableau de bord de toute information. On conserve donc la dernière
+        valeur connue, et le capteur *Dernière connexion* dit de quand elle
+        date.
+        """
+        return self._link.state.connected or self._link.state.last_connected is not None

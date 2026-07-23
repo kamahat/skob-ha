@@ -15,6 +15,7 @@ import asyncio
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 from bleak.backends.characteristic import BleakGATTCharacteristic
 from bleak.exc import BleakError
@@ -52,6 +53,9 @@ class BoksState:
     software: str | None = None
     #: Renseigné une fois la première lecture faite (nom d'appareil lisible).
     name: str | None = None
+    #: Dernière fois que le lien GATT a été établi. Sert de diagnostic et dit
+    #: depuis quand les valeurs affichées datent quand le lien est coupé.
+    last_connected: datetime | None = None
 
 
 class BoksLink:
@@ -66,6 +70,16 @@ class BoksLink:
         self._runner: asyncio.Task | None = None
         self._stop = asyncio.Event()
         self._unregister_adv: Callable[[], None] | None = None
+        #: Faut-il maintenir le lien GATT ? Piloté par le switch « connexion
+        #: maintenue ». Tant qu'il est faux, on se contente d'écouter les
+        #: advertisements — ce qui ne coûte rien à la Boks, là où un lien tenu
+        #: garde sa radio éveillée en permanence et vide ses piles.
+        self._hold = False
+
+    @property
+    def hold(self) -> bool:
+        """Vrai si le lien GATT doit être maintenu."""
+        return self._hold
 
     # ------------------------------------------------------------------ API
     @callback
@@ -85,24 +99,35 @@ class BoksLink:
             update()
 
     async def async_start(self) -> None:
-        """Démarre la boucle de connexion et le suivi du RSSI."""
-        self._stop.clear()
+        """Démarre l'écoute passive des advertisements.
+
+        Le lien GATT, lui, n'est établi que si `async_set_hold(True)` est
+        demandé — voir le switch « connexion maintenue ».
+        """
         self._unregister_adv = bluetooth.async_register_callback(
             self.hass,
             self._async_on_advertisement,
             {"address": self.address, "connectable": False},
             bluetooth.BluetoothScanningMode.ACTIVE,
         )
-        self._runner = self.hass.async_create_background_task(
-            self._async_run(), name=f"boks[{self.address}]"
-        )
 
-    async def async_stop(self) -> None:
-        """Arrête proprement la liaison."""
+    async def async_set_hold(self, hold: bool) -> None:
+        """Établit ou libère le lien GATT permanent."""
+        if hold == self._hold:
+            return
+        self._hold = hold
+        if hold:
+            self._stop.clear()
+            self._runner = self.hass.async_create_background_task(
+                self._async_run(), name=f"boks[{self.address}]"
+            )
+        else:
+            await self._async_cancel_runner()
+            await self._async_disconnect()
+        self._notify_listeners()
+
+    async def _async_cancel_runner(self) -> None:
         self._stop.set()
-        if self._unregister_adv is not None:
-            self._unregister_adv()
-            self._unregister_adv = None
         if self._runner is not None:
             self._runner.cancel()
             try:
@@ -110,6 +135,14 @@ class BoksLink:
             except asyncio.CancelledError:
                 pass
             self._runner = None
+
+    async def async_stop(self) -> None:
+        """Arrête proprement la liaison."""
+        self._hold = False
+        if self._unregister_adv is not None:
+            self._unregister_adv()
+            self._unregister_adv = None
+        await self._async_cancel_runner()
         await self._async_disconnect()
 
     # -------------------------------------------------------------- interne
@@ -167,6 +200,7 @@ class BoksLink:
         )
         self._client = client
         self.state.connected = True
+        self.state.last_connected = datetime.now(timezone.utc)
         self.state.name = device.name or self.address
         _LOGGER.debug("connecté à %s", self.address)
 
