@@ -25,6 +25,7 @@ from homeassistant.helpers import selector
 from .const import (
     CONF_ADDRESS,
     CONF_KEEPALIVE,
+    CONF_OPEN_CODE,
     CONF_RECONNECT_MAX,
     DOMAIN,
     KEEPALIVE_INTERVAL,
@@ -35,6 +36,7 @@ from .const import (
     RECONNECT_MAX_MIN,
     SERVICE_UUID,
 )
+from .protocol import normalize_pin
 
 
 def _title(address: str, name: str | None) -> str:
@@ -141,8 +143,21 @@ class BoksOptionsFlow(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Formulaire unique."""
+        errors: dict[str, str] = {}
         if user_input is not None:
-            return self.async_create_entry(data=user_input)
+            code = (user_input.get(CONF_OPEN_CODE) or "").strip()
+            if code:
+                # Valider ici plutôt qu'à l'appui : un code au mauvais format
+                # produit une trame que la boîte peut ignorer *sans répondre*,
+                # ce qui se diagnostique très mal une fois en service.
+                try:
+                    user_input[CONF_OPEN_CODE] = normalize_pin(code)
+                except ValueError:
+                    errors[CONF_OPEN_CODE] = "invalid_open_code"
+            else:
+                user_input[CONF_OPEN_CODE] = ""
+            if not errors:
+                return self.async_create_entry(data=user_input)
 
         options = self.config_entry.options
         return self.async_show_form(
@@ -173,6 +188,15 @@ class BoksOptionsFlow(OptionsFlow):
                             mode=selector.NumberSelectorMode.SLIDER,
                         )
                     ),
+                    vol.Optional(
+                        CONF_OPEN_CODE,
+                        default=options.get(CONF_OPEN_CODE, ""),
+                    ): selector.TextSelector(
+                        selector.TextSelectorConfig(
+                            type=selector.TextSelectorType.PASSWORD
+                        )
+                    ),
                 }
             ),
+            errors=errors,
         )

@@ -2,8 +2,9 @@
 
 # Boks for Home Assistant
 
-A **read-only** Home Assistant integration for the **Boks** connected mailbox,
-installable through [HACS](https://hacs.xyz/).
+A Home Assistant integration for the **Boks** connected mailbox, installable
+through [HACS](https://hacs.xyz/). **Read-only unless you opt in** to remote
+opening by entering a code — see [Scope](#scope).
 
 The mailbox is reached over Bluetooth LE. Home Assistant is notified **the
 moment the door state changes** — there is no polling.
@@ -11,6 +12,7 @@ moment the door state changes** — there is no polling.
 | Entity | Type | Notes |
 |---|---|---|
 | Door | `binary_sensor` (`door`) | pushed by the mailbox on every change |
+| Open | `button` | **only if an open code is configured** — see [Opening the door](#opening-the-door) |
 | Battery | `sensor` (%) | pushed on change, read on connect |
 | Battery low | `binary_sensor` (`battery`) | diagnostic — **use this, not the percentage** ([why](#battery-alkaline-vs-regulated-cells)) |
 | Hold connection | `switch` | config — see [Holding the link](#holding-the-link) |
@@ -28,13 +30,24 @@ moment the door state changes** — there is no polling.
 > are **not** in the Controls block — that block only holds uncategorised
 > entities.
 
-## Scope — read only
+## Scope
 
-This integration **only reads**. The sole frames it ever transmits are
-**status requests**, which double as the keepalive described below. The frame
-builder *refuses* any other opcode by construction, so the integration cannot
-open the door, manage PIN codes, or change the mailbox configuration — not even
-by accident. No owner credentials are required or used.
+**Read-only by default.** Out of the box the only frames transmitted are
+**status requests**, which double as the keepalive described below. No owner
+credentials are required or used, and no `button` entity is created.
+
+**Opening is opt-in.** If — and only if — you enter an open code in the
+options, an **Open** button appears and the integration may additionally send
+`OPEN_DOOR`. Nothing else ever becomes possible: the frame builder *refuses*
+every other opcode by construction, so code management (16–19), configuration
+changes (22) and provisioning (32–33) remain unreachable, not merely unused.
+
+> Entering a code means **anyone with access to your Home Assistant can open
+> your mailbox**. The code is stored in the config entry, in clear text like
+> every other Home Assistant credential. Leave the field empty to keep the
+> integration strictly read-only.
+
+See [Opening the door](#opening-the-door).
 
 ## Requirements
 
@@ -96,6 +109,31 @@ keepalives and reconnects in a loop — which costs *more* than holding it.
 > Reloading the config entry does **not** reload the integration's Python code;
 > it stays cached in the Home Assistant process. After updating the component
 > files, a full restart is still required.
+
+## Opening the door
+
+Opening requires a secret, but **not** a cryptographic session: there is no
+encrypted handshake on the Boks link. The command simply carries a 6-character
+PIN that the mailbox validates itself, answering `VALID_OPEN_CODE` (129) or
+`INVALID_OPEN_CODE` (130). The secret is the code, not the channel.
+
+Enter one in **Configure** → *Open code*. It must be 6 characters over the
+alphabet `0123456789AB` — twelve symbols, so `C` to `F` are **not** valid. The
+format is checked when you save rather than when you press: a malformed frame
+can be **ignored by the mailbox without any reply**, which is close to
+undiagnosable once in service.
+
+Use a **permanent** code — a master or fixed code from your account. The
+one-time codes the mobile app relays would work exactly once.
+
+The button works **whether or not the link is held**: if it isn't, a temporary
+session is opened for the command and released afterwards. A button that only
+worked while holding the link would be useless in practice, since not holding
+it is both the default and the battery-friendly setting.
+
+The press only reports success once the mailbox answers `VALID_OPEN_CODE`. A
+GATT write on its own proves nothing — a refused code and an unheard command
+would look identical.
 
 ## Battery: alkaline vs regulated cells
 

@@ -23,6 +23,7 @@ from bleak_retry_connector import BleakClientWithServiceCache, establish_connect
 
 from homeassistant.components import bluetooth
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 
 from .const import (
     BATTERY_LOW_ALKALINE,
@@ -33,15 +34,27 @@ from .const import (
     KEEPALIVE_INTERVAL,
     NOTIFY_UUID,
     OPCODE_ANSWER_DOOR_STATUS,
+    OPCODE_INVALID_OPEN_CODE,
     OPCODE_NOTIFY_DOOR_STATUS,
+    OPCODE_VALID_OPEN_CODE,
+    OPEN_TIMEOUT,
     RECONNECT_DELAY_MAX,
     RECONNECT_DELAY_MIN,
     SOFTWARE_UUID,
     WRITE_UUID,
 )
-from .protocol import ASK_DOOR_STATUS_FRAME, door_is_open, parse_frame
+from .protocol import (
+    ASK_DOOR_STATUS_FRAME,
+    build_open_door_frame,
+    door_is_open,
+    parse_frame,
+)
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class BoksOpenError(HomeAssistantError):
+    """L'ouverture n'a pas abouti — code refusé, hors de portée, ou silence."""
 
 
 @dataclass
@@ -73,6 +86,7 @@ class BoksLink:
         address: str,
         keepalive: float = KEEPALIVE_INTERVAL,
         reconnect_max: float = RECONNECT_DELAY_MAX,
+        open_code: str | None = None,
     ) -> None:
         self.hass = hass
         self.address = address
@@ -82,6 +96,14 @@ class BoksLink:
         self.keepalive = keepalive
         #: Plafond du backoff de reconnexion.
         self.reconnect_max = reconnect_max
+        #: Code d'ouverture. Absent = pas de bouton d'ouverture, l'intégration
+        #: reste strictement en lecture.
+        self.open_code = open_code
+        #: Résultat attendu d'un OPEN_DOOR en cours (129/130).
+        self._open_result: asyncio.Future[bool] | None = None
+        #: Sérialise les ouvertures : deux commandes concurrentes se
+        #: voleraient mutuellement la réponse.
+        self._open_lock = asyncio.Lock()
         self.state = BoksState()
         self._client: BleakClientWithServiceCache | None = None
         self._listeners: list[Callable[[], None]] = []
@@ -224,6 +246,88 @@ class BoksLink:
             await self._async_disconnect()
         self._notify_listeners()
 
+    async def async_open_door(self) -> None:
+        """Ouvre la porte.
+
+        Fonctionne dans les deux régimes, ce qui est le point important : si le
+        lien n'est pas maintenu, une session temporaire est établie le temps de
+        la commande puis relâchée. Un bouton qui n'ouvrirait qu'avec le lien
+        déjà tenu serait inutilisable en pratique, puisque le défaut — et le
+        réglage économe — est justement de ne pas le tenir.
+
+        Lève ``BoksOpenError`` si le code est refusé ou si la boîte ne répond
+        pas : la réponse ``VALID_OPEN_CODE`` est la seule preuve d'ouverture,
+        l'écriture GATT ne prouve rien à elle seule.
+        """
+        if not self.open_code:
+            raise BoksOpenError("aucun code d'ouverture n'est configuré")
+        frame = build_open_door_frame(self.open_code)
+
+        async with self._open_lock:
+            loop = asyncio.get_running_loop()
+            self._open_result = loop.create_future()
+            try:
+                if self._client is not None and self._client.is_connected:
+                    await self._client.write_gatt_char(WRITE_UUID, frame, response=True)
+                else:
+                    await self._async_open_via_temp_session(frame)
+                accepted = await asyncio.wait_for(self._open_result, OPEN_TIMEOUT)
+            except TimeoutError as err:
+                raise BoksOpenError(
+                    "la boîte n'a pas répondu — un code au mauvais format est "
+                    "ignoré sans réponse, et la boîte peut être hors de portée"
+                ) from err
+            except (BleakError, EOFError) as err:
+                raise BoksOpenError(f"échec de la liaison: {err}") from err
+            finally:
+                self._open_result = None
+
+        if not accepted:
+            raise BoksOpenError("code d'ouverture refusé par la boîte")
+        _LOGGER.info("ouverture acceptée par %s", self.address)
+
+    async def _async_open_via_temp_session(self, frame: bytes) -> None:
+        """Établit une connexion le temps d'une commande, puis la relâche.
+
+        On souscrit aux notifications avant d'écrire : sans CCCD, la réponse
+        129/130 ne remonterait jamais et l'ouverture paraîtrait avoir échoué
+        alors qu'elle a eu lieu.
+        """
+        device = bluetooth.async_ble_device_from_address(
+            self.hass, self.address, connectable=True
+        )
+        if device is None:
+            raise BoksOpenError(
+                f"{self.address} hors de portée d'un adaptateur/proxy connectable"
+            )
+
+        client: BleakClientWithServiceCache = await establish_connection(
+            BleakClientWithServiceCache,
+            device,
+            self.address,
+            self._on_disconnected,
+            use_services_cache=False,
+        )
+        self.state.last_connected = datetime.now(timezone.utc)
+        try:
+            await client.start_notify(NOTIFY_UUID, self._on_app_notify)
+            await client.write_gatt_char(WRITE_UUID, frame, response=True)
+            # On attend la réponse ici, connexion encore ouverte : la relâcher
+            # tout de suite couperait la notification qu'on cherche.
+            if self._open_result is not None:
+                await asyncio.wait_for(
+                    asyncio.shield(self._open_result), OPEN_TIMEOUT
+                )
+        finally:
+            try:
+                await client.clear_cache()
+            except Exception as err:  # noqa: BLE001 - purement opportuniste
+                _LOGGER.debug("purge du cache GATT impossible: %s", err)
+            try:
+                await client.disconnect()
+            except (BleakError, EOFError) as err:
+                _LOGGER.debug("déconnexion après ouverture: %s", err)
+
     async def _async_cancel_runner(self) -> None:
         self._stop.set()
         if self._runner is not None:
@@ -364,6 +468,10 @@ class BoksLink:
         if parsed is None:
             return
         opcode, payload = parsed
+        if opcode in (OPCODE_VALID_OPEN_CODE, OPCODE_INVALID_OPEN_CODE):
+            if self._open_result is not None and not self._open_result.done():
+                self._open_result.set_result(opcode == OPCODE_VALID_OPEN_CODE)
+            return
         if opcode not in (OPCODE_NOTIFY_DOOR_STATUS, OPCODE_ANSWER_DOOR_STATUS):
             _LOGGER.debug("opcode %s ignoré (%s)", opcode, bytes(data).hex())
             return

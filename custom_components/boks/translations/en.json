@@ -24,13 +24,18 @@
         "description": "Saving reloads the link without restarting Home Assistant. Note: the integration's Python code is not reloaded — after updating the component files, a restart is still required.",
         "data": {
           "keepalive": "Keepalive interval",
-          "reconnect_max": "Maximum delay between reconnection attempts"
+          "reconnect_max": "Maximum delay between reconnection attempts",
+          "open_code": "Open code (optional)"
         },
         "data_description": {
           "keepalive": "The Boks closes the connection after about 30 s of silence. A longer interval means fewer exchanges (and lower power draw) while the link is held, but moves closer to that cutoff: beyond it the link drops and reconnects in a loop, which costs more.",
-          "reconnect_max": "Ceiling for the delay, which doubles on every failure. A high value spares the batteries while the Boks is out of range; a low one shortens the time to come back online."
+          "reconnect_max": "Ceiling for the delay, which doubles on every failure. A high value spares the batteries while the Boks is out of range; a low one shortens the time to come back online.",
+          "open_code": "6 characters over the alphabet 0123456789AB. Filling this in adds an Open button: anyone with access to Home Assistant will then be able to open the mailbox. Leaving it empty keeps the integration strictly read-only. Use a permanent code (a master or fixed code from your account) — a single-use code would work exactly once."
         }
       }
+    },
+    "error": {
+      "invalid_open_code": "Invalid code: 6 characters, only 0-9, A and B."
     }
   }
 }

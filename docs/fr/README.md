@@ -2,8 +2,10 @@
 
 # Boks pour Home Assistant
 
-Intégration Home Assistant **en lecture seule** pour la boîte aux lettres
-connectée **Boks**, installable via [HACS](https://hacs.xyz/).
+Intégration Home Assistant pour la boîte aux lettres connectée **Boks**,
+installable via [HACS](https://hacs.xyz/). **En lecture seule tant que vous
+n'activez pas** l'ouverture à distance en renseignant un code — voir
+[Périmètre](#périmètre).
 
 La boîte est jointe en Bluetooth LE. Home Assistant est prévenu **à l'instant
 où l'état de la porte change** — aucun polling.
@@ -11,6 +13,7 @@ où l'état de la porte change** — aucun polling.
 | Entité | Type | Remarques |
 |---|---|---|
 | Porte | `binary_sensor` (`door`) | poussée par la boîte à chaque changement |
+| Ouvrir | `button` | **seulement si un code d'ouverture est configuré** — voir [Ouvrir la porte](#ouvrir-la-porte) |
 | Batterie | `sensor` (%) | poussée sur changement, lue à la connexion |
 | Piles à remplacer | `binary_sensor` (`battery`) | diagnostic — **à utiliser plutôt que le pourcentage** ([pourquoi](#batterie--alcalines-ou-cellules-régulées)) |
 | Connexion maintenue | `switch` | configuration — voir [Maintenir le lien](#maintenir-le-lien) |
@@ -28,14 +31,27 @@ où l'état de la porte change** — aucun polling.
 > *Diagnostic*. Les deux switches ne sont donc **pas** dans le bloc Contrôles,
 > qui ne reçoit que les entités sans catégorie.
 
-## Périmètre — lecture seule
+## Périmètre
 
-Cette intégration **ne fait que lire**. Les seules trames qu'elle émet sont des
-**requêtes de statut**, qui servent aussi de keepalive (voir plus bas). Le
-constructeur de trames *refuse* tout autre opcode par construction : il est donc
-structurellement impossible que l'intégration ouvre la porte, gère des codes PIN
-ou modifie la configuration — pas même par erreur. Aucun identifiant du
-propriétaire n'est requis ni utilisé.
+**Lecture seule par défaut.** En sortie de boîte, les seules trames émises sont
+des **requêtes de statut**, qui servent aussi de keepalive (voir plus bas).
+Aucun identifiant du propriétaire n'est requis ni utilisé, et aucune entité
+`button` n'est créée.
+
+**L'ouverture s'active volontairement.** Si — et seulement si — vous renseignez
+un code d'ouverture dans les options, un bouton **Ouvrir** apparaît et
+l'intégration peut en plus émettre `OPEN_DOOR`. Rien d'autre ne devient
+possible pour autant : le constructeur de trames *refuse* tout autre opcode par
+construction, de sorte que la gestion de codes (16-19), les changements de
+configuration (22) et le provisioning (32-33) restent hors d'atteinte — pas
+seulement inutilisés.
+
+> Renseigner un code signifie que **quiconque a accès à votre Home Assistant
+> peut ouvrir votre boîte aux lettres**. Le code est stocké dans l'entrée de
+> configuration, en clair comme tout identifiant Home Assistant. Laissez le
+> champ vide pour garder l'intégration strictement en lecture.
+
+Voir [Ouvrir la porte](#ouvrir-la-porte).
 
 ## Prérequis
 
@@ -98,6 +114,33 @@ keepalives et se reconnecte en boucle — ce qui coûte *plus* que de le tenir.
 > Recharger l'entrée ne recharge **pas** le code Python de l'intégration, qui
 > reste en cache dans le processus Home Assistant. Après une mise à jour des
 > fichiers du composant, un redémarrage complet reste nécessaire.
+
+## Ouvrir la porte
+
+Ouvrir exige un secret, mais **pas** une session chiffrée : il n'y a aucun
+handshake sur le lien Boks. La commande transporte simplement un PIN de
+6 caractères que la boîte valide elle-même, en répondant `VALID_OPEN_CODE`
+(129) ou `INVALID_OPEN_CODE` (130). Le secret est le code, pas le canal.
+
+Renseignez-en un dans **Configurer** → *Code d'ouverture*. Il fait
+6 caractères sur l'alphabet `0123456789AB` — douze symboles, donc `C` à `F` ne
+sont **pas** valides. Le format est vérifié à l'enregistrement plutôt qu'à
+l'appui : une trame mal formée peut être **ignorée par la boîte sans aucune
+réponse**, ce qui est quasi indiagnosticable une fois en service.
+
+Utilisez un code **permanent** — code maître ou code fixe de votre compte. Les
+codes à usage unique que relaie l'application mobile ne fonctionneraient
+qu'une seule fois.
+
+Le bouton fonctionne **que le lien soit maintenu ou non** : s'il ne l'est pas,
+une session temporaire est établie le temps de la commande puis relâchée. Un
+bouton qui n'aurait marché qu'avec le lien déjà tenu serait inutilisable en
+pratique, puisque ne pas le tenir est à la fois le défaut et le réglage
+économe.
+
+L'appui n'est réputé réussi qu'une fois la réponse `VALID_OPEN_CODE` reçue. Une
+écriture GATT ne prouve rien à elle seule : un code refusé et une commande non
+entendue se ressembleraient exactement.
 
 ## Batterie : alcalines ou cellules régulées
 

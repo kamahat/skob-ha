@@ -22,13 +22,18 @@
         "description": "Valider recharge la liaison sans redemarrer Home Assistant. Attention : le code du composant, lui, n'est pas recharge — apres une mise a jour des fichiers, un redemarrage reste necessaire.",
         "data": {
           "keepalive": "Intervalle de keepalive",
-          "reconnect_max": "Delai maximal entre deux tentatives de reconnexion"
+          "reconnect_max": "Delai maximal entre deux tentatives de reconnexion",
+          "open_code": "Code d'ouverture (optionnel)"
         },
         "data_description": {
           "keepalive": "La Boks ferme la connexion apres environ 30 s de silence. Augmenter cette valeur reduit les echanges (et donc la consommation) quand le lien est maintenu, mais rapproche du seuil de coupure : au-dela, le lien tombe et se reconnecte en boucle, ce qui consomme davantage.",
-          "reconnect_max": "Plafond du delai qui double a chaque echec. Une valeur elevee menage les piles quand la Boks est hors de portee ; une valeur basse raccourcit le retour en ligne."
+          "reconnect_max": "Plafond du delai qui double a chaque echec. Une valeur elevee menage les piles quand la Boks est hors de portee ; une valeur basse raccourcit le retour en ligne.",
+          "open_code": "6 caracteres sur l'alphabet 0123456789AB. Renseigner ce champ fait apparaitre un bouton Ouvrir : quiconque a acces a Home Assistant pourra alors ouvrir la boite. Laisser vide garde l'integration strictement en lecture. Utilisez un code permanent (code maitre ou code fixe de votre compte) : un code a usage unique ne fonctionnerait qu'une fois."
         }
       }
+    },
+    "error": {
+      "invalid_open_code": "Code invalide : 6 caracteres, uniquement 0-9, A et B."
     }
   }
 }

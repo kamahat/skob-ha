@@ -25,12 +25,33 @@ OPCODE_TEST_BATTERY: Final = 8
 OPCODE_NOTIFY_DOOR_STATUS: Final = 132
 OPCODE_ANSWER_DOOR_STATUS: Final = 133
 
-# Périmètre volontairement restreint : cette intégration est en LECTURE.
-# Les seules trames émises sont des requêtes de statut. Aucune commande
-# d'ouverture (OPEN_DOOR=1), aucune gestion de codes (16-19), aucune
-# modification de configuration (22) — ces opérations exigeraient la
-# Config Key / Master Key du propriétaire et sortent du périmètre.
-ALLOWED_TX_OPCODES: Final = frozenset({OPCODE_ASK_DOOR_STATUS, OPCODE_TEST_BATTERY})
+# --- Ouverture à distance --------------------------------------------------
+# Contrairement au reste, ouvrir exige un secret. Il n'y a cependant AUCUN
+# handshake chiffré sur le lien Boks : la commande transporte simplement un
+# code PIN de 6 caractères que la boîte valide elle-même, et répond 129 ou 130.
+# Le secret est donc le code, pas une session.
+OPCODE_OPEN_DOOR: Final = 1
+OPCODE_VALID_OPEN_CODE: Final = 129
+OPCODE_INVALID_OPEN_CODE: Final = 130
+
+CONF_OPEN_CODE: Final = "open_code"
+#: Les PIN Boks s'écrivent sur douze symboles seulement — pas de C à F.
+PIN_ALPHABET: Final = "0123456789AB"
+PIN_LENGTH: Final = 6
+#: Attente de la réponse 129/130. Généreux : lien coupé, il faut d'abord
+#: établir la connexion.
+OPEN_TIMEOUT: Final = 30.0
+
+# Périmètre volontairement restreint. L'intégration lit l'état de la boîte
+# et, si — et seulement si — l'utilisateur a configuré un code, sait ouvrir la
+# porte. Rien d'autre : aucune gestion de codes (16-19), aucune modification
+# de configuration (22), aucun provisioning (32-33). Ces opérations exigent la
+# Config Key / Master Key du propriétaire et sont, pour certaines,
+# irréversibles — le constructeur de trames refuse leurs opcodes par
+# construction, pas par convention.
+ALLOWED_TX_OPCODES: Final = frozenset(
+    {OPCODE_ASK_DOOR_STATUS, OPCODE_TEST_BATTERY, OPCODE_OPEN_DOOR}
+)
 
 # --- Liaison ---------------------------------------------------------------
 # La Boks applique un watchdog applicatif : elle ferme la connexion au bout

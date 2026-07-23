@@ -11,6 +11,9 @@ import logging
 from .const import (
     ALLOWED_TX_OPCODES,
     OPCODE_ASK_DOOR_STATUS,
+    OPCODE_OPEN_DOOR,
+    PIN_ALPHABET,
+    PIN_LENGTH,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -28,6 +31,33 @@ def build_frame(opcode: int, payload: bytes = b"") -> bytes:
 
 #: Requête d'état de la porte — sert aussi de keepalive (cf. const.KEEPALIVE_INTERVAL).
 ASK_DOOR_STATUS_FRAME: bytes = build_frame(OPCODE_ASK_DOOR_STATUS)
+
+
+def normalize_pin(pin: str) -> str:
+    """Valide et normalise un code d'ouverture.
+
+    Les PIN Boks font 6 caractères sur l'alphabet ``0123456789AB`` — douze
+    symboles, pas seize : ``C`` à ``F`` n'en font pas partie. On vérifie ici
+    plutôt qu'à l'usage, car un code mal saisi produirait une trame que la
+    boîte peut **ignorer sans répondre**, ce qui se diagnostique très mal.
+    """
+    candidate = pin.strip().upper()
+    if len(candidate) != PIN_LENGTH:
+        raise ValueError(
+            f"un code d'ouverture fait {PIN_LENGTH} caractères, celui-ci en a "
+            f"{len(candidate)}"
+        )
+    invalid = sorted({c for c in candidate if c not in PIN_ALPHABET})
+    if invalid:
+        raise ValueError(
+            f"caractères invalides {invalid} — alphabet autorisé : {PIN_ALPHABET}"
+        )
+    return candidate
+
+
+def build_open_door_frame(pin: str) -> bytes:
+    """Construit la commande d'ouverture pour un code donné."""
+    return build_frame(OPCODE_OPEN_DOOR, normalize_pin(pin).encode("ascii"))
 
 
 def parse_frame(data: bytes) -> tuple[int, bytes] | None:
