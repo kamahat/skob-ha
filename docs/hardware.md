@@ -2,9 +2,11 @@
 
 # Hardware specification
 
-You need one **ESP32-S3** board acting as a Bluetooth proxy between the mailbox
-and your WiFi network. Any ESP32-S3 module will do; the notes below come from a
-real build and will save you time.
+You need one board acting as a Bluetooth proxy between the mailbox and your
+WiFi network. The reference build and the shipped firmware target the
+**ESP32-S3**; any ESP32-S3 module will do, and the notes below come from a real
+build and will save you time. Two newer RISC-V chips are also worth
+considering — see [Alternative boards](#alternative-boards-esp32-c6--c5).
 
 ## Required
 
@@ -15,6 +17,31 @@ real build and will save you time.
 | PSRAM | **not required** | The firmware is designed to run without it. |
 | Antenna | **external, strongly recommended** | The mailbox is a metal enclosure, so its signal is weak. See [radio budget](#radio-budget). |
 | Power | Any 5 V USB supply | A power bank is fine for testing; use a fixed supply for permanent installs. |
+
+## Alternative boards (ESP32-C6 / C5)
+
+The **ESP32-S3** is the reference and is validated end-to-end against this
+mailbox. Two newer RISC-V chips are attractive alternatives — both need the
+firmware retargeted and rebuilt (`idf.py set-target esp32c6` / `esp32c5`), and
+neither has yet been validated against the mailbox here.
+
+| Chip | Suggested boards | Radio | Cores | Maturity for this use | Watch out |
+|---|---|---|---|---|---|
+| **ESP32-S3** *(reference)* | generic DevKitC-1 (N16R8) | 2.4 GHz Wi-Fi + BLE 5 | 2× Xtensa (true dual-core) | **Validated** end-to-end | mislabelled PSRAM on clones — see [reference board](#board-used-for-reference) |
+| **ESP32-C6** | Seeed XIAO ESP32-C6, M5Stack NanoC6 | 2.4 GHz Wi-Fi 6 + BLE 5 | 1× HP RISC-V + 1× LP core | Mature silicon, well supported in ESP-IDF | **poor-quality clones circulate** — buy from a reputable seller |
+| **ESP32-C5** | M5Stack Stamp-C5, Seeed XIAO ESP32-C5 | **dual-band 2.4 + 5 GHz** Wi-Fi 6 + BLE 5 | 1× HP RISC-V + 1× LP core | Recent and promising; ESP-IDF support still maturing | bleeding edge — expect rough tooling and firmware churn |
+
+> **Why the C5 is interesting for this project specifically.** On single-band
+> chips (S3, C6), Wi-Fi and BLE share the one 2.4 GHz radio and must time-slice
+> it — the coexistence contention that made an earlier proxy attempt
+> unreliable. The C5 is **dual-band**: put Wi-Fi on 5 GHz and the 2.4 GHz radio
+> is left entirely to Bluetooth. Given how thin the
+> [radio budget](#radio-budget) already is through the mailbox's metal
+> enclosure, not sharing 2.4 GHz airtime is a real advantage.
+>
+> The C6, by contrast, is single-band like the S3 — no coexistence gain — but
+> it is mature and cheap. Its "cores" are not comparable to the S3's: one
+> high-performance RISC-V core plus a low-power core, not two application cores.
 
 ## USB ports — a common pitfall
 

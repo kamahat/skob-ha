@@ -2,9 +2,12 @@
 
 # Spécification matérielle
 
-Il vous faut une carte **ESP32-S3** faisant office de proxy Bluetooth entre la
-boîte aux lettres et votre réseau WiFi. N'importe quel module ESP32-S3 convient ;
-les notes ci-dessous viennent d'un montage réel et vous feront gagner du temps.
+Il vous faut une carte faisant office de proxy Bluetooth entre la boîte aux
+lettres et votre réseau WiFi. Le montage de référence et le firmware fourni
+ciblent l'**ESP32-S3** ; n'importe quel module ESP32-S3 convient, et les notes
+ci-dessous viennent d'un montage réel qui vous fera gagner du temps. Deux puces
+RISC-V plus récentes méritent aussi l'examen — voir
+[Cartes alternatives](#cartes-alternatives-esp32-c6--c5).
 
 ## Nécessaire
 
@@ -15,6 +18,34 @@ les notes ci-dessous viennent d'un montage réel et vous feront gagner du temps.
 | PSRAM | **inutile** | Le firmware est conçu pour s'en passer. |
 | Antenne | **externe, fortement recommandée** | La boîte est un caisson métallique, son signal est faible. Voir [budget radio](#budget-radio). |
 | Alimentation | 5 V USB | Une batterie externe suffit pour tester ; préférez une alimentation fixe en permanent. |
+
+## Cartes alternatives (ESP32-C6 / C5)
+
+L'**ESP32-S3** est la référence, validée de bout en bout contre cette boîte.
+Deux puces RISC-V plus récentes sont des alternatives intéressantes — toutes
+deux imposent de recibler et recompiler le firmware
+(`idf.py set-target esp32c6` / `esp32c5`), et aucune n'a encore été validée
+contre la boîte ici.
+
+| Puce | Cartes suggérées | Radio | Cœurs | Maturité pour cet usage | Attention |
+|---|---|---|---|---|---|
+| **ESP32-S3** *(référence)* | DevKitC-1 générique (N16R8) | Wi-Fi 2,4 GHz + BLE 5 | 2× Xtensa (vrai dual-core) | **Validée** de bout en bout | marquage PSRAM trompeur sur les clones — voir [carte de référence](#carte-utilisée-en-référence) |
+| **ESP32-C6** | Seeed XIAO ESP32-C6, M5Stack NanoC6 | Wi-Fi 6 2,4 GHz + BLE 5 | 1× RISC-V HP + 1× cœur LP | Silicium mature, bien supporté par ESP-IDF | **des clones de mauvaise qualité circulent** — achetez chez un vendeur fiable |
+| **ESP32-C5** | M5Stack Stamp-C5, Seeed XIAO ESP32-C5 | Wi-Fi 6 **bi-bande 2,4 + 5 GHz** + BLE 5 | 1× RISC-V HP + 1× cœur LP | Récente et prometteuse ; support ESP-IDF encore en maturation | avant-garde — outillage et firmware encore mouvants |
+
+> **Pourquoi le C5 est intéressant pour ce projet précisément.** Sur les puces
+> mono-bande (S3, C6), le Wi-Fi et le BLE partagent l'unique radio 2,4 GHz et
+> doivent se la partager dans le temps — c'est la contention de coexistence qui
+> avait rendu un précédent proxy peu fiable. Le C5 est **bi-bande** : placez le
+> Wi-Fi sur 5 GHz et la radio 2,4 GHz est laissée entièrement au Bluetooth.
+> Vu la minceur du [budget radio](#budget-radio) à travers le caisson
+> métallique de la boîte, ne pas partager le temps d'antenne 2,4 GHz est un
+> vrai atout.
+>
+> Le C6, lui, est mono-bande comme le S3 — aucun gain de coexistence — mais il
+> est mature et peu cher. Ses « cœurs » ne se comparent pas à ceux du S3 : un
+> cœur RISC-V haute performance plus un cœur basse consommation, pas deux cœurs
+> applicatifs.
 
 ## Ports USB — le piège classique
 
