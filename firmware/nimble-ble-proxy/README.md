@@ -188,6 +188,29 @@ The firmware is now at `build/nimble_ble_proxy.bin` — around **1.28 MB**.
 
 ---
 
+### C.6 — Give the binary a versioned name
+
+`idf.py build` always writes to the same path, so successive builds are
+indistinguishable once you have a few. Copy it under a name that says which
+one it is:
+
+```bash
+cp build/nimble_ble_proxy.bin    build/nimble_ble_proxy-0.1.0-$(date +%Y%m%d-%H%M).bin
+```
+
+This matters more than it looks. **Do not rely on the build date shown in the
+dashboard footer or by `GET /appinfo` to tell which firmware is running**:
+ESP-IDF only regenerates that string when the translation unit carrying it is
+recompiled, so after an incremental build it can report an older timestamp
+while a newer image is genuinely running. A versioned filename is the reliable
+record.
+
+To confirm what a device is actually running, test for a change you made — for
+instance fetch `/` and look for markup you added — rather than trusting the
+reported date.
+
+---
+
 ## D. Checking the firmware before you flash it
 
 Three quick checks catch the mistakes that are painful to diagnose later.

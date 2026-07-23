@@ -191,6 +191,30 @@ Le firmware se trouve alors dans `build/nimble_ble_proxy.bin` — environ
 
 ---
 
+### C.6 — Donner un nom versionné au binaire
+
+`idf.py build` écrit toujours au même endroit : au bout de quelques
+compilations, les binaires deviennent indiscernables. Copiez-le sous un nom
+qui dit lequel c'est :
+
+```bash
+cp build/nimble_ble_proxy.bin    build/nimble_ble_proxy-0.1.0-$(date +%Y%m%d-%H%M).bin
+```
+
+Ce détail compte plus qu'il n'y paraît. **Ne vous fiez pas à la date de
+compilation affichée en pied de tableau de bord ni renvoyée par
+`GET /appinfo` pour savoir quel firmware tourne** : ESP-IDF ne régénère cette
+chaîne que si l'unité de compilation qui la porte est recompilée. Après un
+build incrémental, elle peut donc annoncer un horodatage plus ancien alors
+qu'une image plus récente s'exécute réellement. Le nom de fichier versionné
+est la trace fiable.
+
+Pour vérifier ce qu'une carte exécute vraiment, cherchez une modification que
+vous avez faite — par exemple récupérez `/` et vérifiez la présence d'un
+élément que vous avez ajouté — plutôt que de croire la date annoncée.
+
+---
+
 ## D. Vérifier le firmware avant de le flasher
 
 Trois contrôles rapides évitent les erreurs pénibles à diagnostiquer ensuite.

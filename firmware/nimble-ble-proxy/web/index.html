@@ -74,6 +74,10 @@ code{color:#bbb}
 #status.ok{color:#4ade80}
 #status.err{color:#f87171}
 #otastat{color:#aaa;font-size:.9em;margin-left:.5em}
+/* A disabled control must look disabled: during an upload both the picker and
+   the button are locked, and without this the button looks clickable and
+   invites a second press. */
+button:disabled,input:disabled{opacity:.45;cursor:not-allowed}
 #otastat.ok{color:#4ade80}#otastat.err{color:#f87171}
 .devwrap{overflow-x:auto;max-width:100%}
 table#devices{border-collapse:collapse;font-size:12px;color:#ddd;
