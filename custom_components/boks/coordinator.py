@@ -309,6 +309,10 @@ class BoksLink:
             use_services_cache=False,
         )
         self.state.last_connected = datetime.now(timezone.utc)
+        # Une connexion vient d'avoir lieu : le diagnostic de fraîcheur doit le
+        # refléter, même brève et hors du lien maintenu. Sans cela, « Dernière
+        # connexion » resterait indisponible après une ouverture réussie.
+        self._notify_listeners()
         try:
             await client.start_notify(NOTIFY_UUID, self._on_app_notify)
             await client.write_gatt_char(WRITE_UUID, frame, response=True)
