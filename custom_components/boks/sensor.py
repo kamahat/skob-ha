@@ -50,6 +50,18 @@ class BoksBatterySensor(BoksEntity, SensorEntity):
     def native_value(self) -> int | None:
         return self._link.state.battery
 
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        """Donne de quoi interpréter le chiffre.
+
+        Avec un pack à tension régulée, « 100 % » ne signifie pas « pleines » :
+        il faut savoir sur quelle référence on se compare.
+        """
+        return {
+            "regulated": self._link.rechargeable,
+            "plateau": self._link.state.battery_plateau,
+        }
+
 
 class BoksRssiSensor(BoksEntity, SensorEntity):
     """Puissance du signal reçu, relevée sur les advertisements."""

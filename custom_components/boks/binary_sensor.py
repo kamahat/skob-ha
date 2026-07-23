@@ -20,7 +20,9 @@ async def async_setup_entry(
 ) -> None:
     """Ajoute les capteurs binaires."""
     link: BoksLink = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([BoksDoorSensor(link), BoksLinkSensor(link)])
+    async_add_entities(
+        [BoksDoorSensor(link), BoksLinkSensor(link), BoksBatteryLowSensor(link)]
+    )
 
 
 class BoksDoorSensor(BoksEntity, BinarySensorEntity):
@@ -56,3 +58,24 @@ class BoksLinkSensor(BoksEntity, BinarySensorEntity):
     @property
     def is_on(self) -> bool:
         return self._link.state.connected
+
+
+class BoksBatteryLowSensor(BoksEntity, BinarySensorEntity):
+    """Alerte de fin de vie des piles.
+
+    C'est ce capteur, et non le pourcentage, qu'il faut utiliser en
+    automatisation : sa logique s'adapte au type de piles déclaré (voir le
+    switch « piles rechargeables »), là où un seuil fixe sur le pourcentage
+    ne préviendrait jamais avec un pack à tension régulée.
+    """
+
+    _attr_device_class = BinarySensorDeviceClass.BATTERY
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, link: BoksLink) -> None:
+        super().__init__(link, "battery_low")
+        self._attr_name = "Piles à remplacer"
+
+    @property
+    def is_on(self) -> bool | None:
+        return self._link.battery_low

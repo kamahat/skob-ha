@@ -25,6 +25,9 @@ from homeassistant.components import bluetooth
 from homeassistant.core import HomeAssistant, callback
 
 from .const import (
+    BATTERY_LOW_ALKALINE,
+    BATTERY_SAG_REGULATED,
+    BATTERY_TRANSIENT_DROP,
     BATTERY_UUID,
     FIRMWARE_UUID,
     KEEPALIVE_INTERVAL,
@@ -56,6 +59,9 @@ class BoksState:
     #: Dernière fois que le lien GATT a été établi. Sert de diagnostic et dit
     #: depuis quand les valeurs affichées datent quand le lien est coupé.
     last_connected: datetime | None = None
+    #: Plus haut niveau observé depuis la mise en place du jeu de piles courant.
+    #: Sert de référence en mode régulé, où seul le décrochage est lisible.
+    battery_plateau: int | None = None
 
 
 class BoksLink:
@@ -75,11 +81,91 @@ class BoksLink:
         #: advertisements — ce qui ne coûte rien à la Boks, là où un lien tenu
         #: garde sa radio éveillée en permanence et vide ses piles.
         self._hold = False
+        #: Le jeu de piles en place est-il à tension régulée (lithium 1,5 V
+        #: rechargeable) ? Piloté par le switch « piles rechargeables ».
+        self._rechargeable = False
+        #: Baisse franche en attente de confirmation (cf. BATTERY_TRANSIENT_DROP).
+        self._battery_candidate: int | None = None
 
     @property
     def hold(self) -> bool:
         """Vrai si le lien GATT doit être maintenu."""
         return self._hold
+
+    @property
+    def rechargeable(self) -> bool:
+        """Vrai si le pack en place est à tension régulée."""
+        return self._rechargeable
+
+    @callback
+    def async_set_rechargeable(self, rechargeable: bool) -> None:
+        """Déclare le type de piles en place.
+
+        Le basculement vaut « nouveau jeu de piles » : le plateau de référence
+        est remis à zéro, sans quoi on comparerait le pack neuf au maximum
+        observé sur le précédent.
+        """
+        if rechargeable == self._rechargeable:
+            return
+        self._rechargeable = rechargeable
+        self.state.battery_plateau = self.state.battery
+        self._notify_listeners()
+
+    @property
+    def battery_low(self) -> bool | None:
+        """Le jeu de piles est-il en fin de vie ?
+
+        Deux régimes, parce que la grandeur mesurée n'a pas le même sens :
+
+        - **Alcalines** — la tension décroît régulièrement, le pourcentage
+          publié par la Boks est exploitable tel quel : seuil classique.
+        - **Lithium régulées** — la tension reste plate jusqu'à la coupure de
+          la protection. Le niveau ne renseigne plus sur la charge restante,
+          seulement sur le fait que le pack commence à ne plus tenir. Tout
+          décrochage durable sous le plateau est donc déjà une alerte.
+        """
+        level = self.state.battery
+        if level is None:
+            return None
+        if not self._rechargeable:
+            return level <= BATTERY_LOW_ALKALINE
+        plateau = self.state.battery_plateau
+        if plateau is None:
+            return None
+        return level <= plateau - BATTERY_SAG_REGULATED
+
+    def _accept_battery(self, level: int) -> bool:
+        """Écarte les creux de tension passagers.
+
+        L'ouverture de la porte sollicite le moteur : la tension plonge le temps
+        de la manœuvre et la Boks a déjà publié 0 % dans ces conditions. Une
+        remontée est toujours retenue immédiatement ; une chute franche ne l'est
+        qu'après confirmation par une seconde lecture identique.
+        """
+        current = self.state.battery
+        if current is not None and level <= current - BATTERY_TRANSIENT_DROP:
+            if self._battery_candidate != level:
+                self._battery_candidate = level
+                _LOGGER.debug(
+                    "creux batterie %s%% ignoré (courant %s%%), en attente de confirmation",
+                    level,
+                    current,
+                )
+                return False
+        self._battery_candidate = None
+        return True
+
+    @callback
+    def _set_battery(self, level: int) -> None:
+        """Retient un niveau de batterie et tient le plateau à jour."""
+        if not self._accept_battery(level):
+            return
+        plateau = self.state.battery_plateau
+        if plateau is None or level > plateau:
+            self.state.battery_plateau = level
+        if level != self.state.battery:
+            self.state.battery = level
+            self._notify_listeners()
 
     # ------------------------------------------------------------------ API
     @callback
@@ -240,7 +326,6 @@ class BoksLink:
         for uuid, attr, decoder in (
             (FIRMWARE_UUID, "firmware", lambda b: b.decode("utf-8", "replace").strip()),
             (SOFTWARE_UUID, "software", lambda b: b.decode("utf-8", "replace").strip()),
-            (BATTERY_UUID, "battery", lambda b: b[0] if b else None),
         ):
             try:
                 raw = await client.read_gatt_char(uuid)
@@ -248,6 +333,17 @@ class BoksLink:
                 _LOGGER.debug("lecture %s impossible: %s", uuid, err)
                 continue
             setattr(self.state, attr, decoder(bytes(raw)))
+
+        # La batterie passe par le même filtre que les notifications : une
+        # lecture faite juste après une ouverture de porte est tout aussi
+        # susceptible d'attraper un creux de tension.
+        try:
+            raw = await client.read_gatt_char(BATTERY_UUID)
+        except (BleakError, EOFError) as err:
+            _LOGGER.debug("lecture batterie impossible: %s", err)
+        else:
+            if raw:
+                self._set_battery(bytes(raw)[0])
 
     @callback
     def _on_app_notify(self, _char: BleakGATTCharacteristic, data: bytearray) -> None:
@@ -273,9 +369,7 @@ class BoksLink:
         """Notification batterie standard (0x2A19) : un octet de pourcentage."""
         if not data:
             return
-        if data[0] != self.state.battery:
-            self.state.battery = data[0]
-            self._notify_listeners()
+        self._set_battery(data[0])
 
     @callback
     def _on_disconnected(self, _client: BleakClientWithServiceCache) -> None:

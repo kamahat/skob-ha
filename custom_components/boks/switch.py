@@ -20,7 +20,7 @@ async def async_setup_entry(
 ) -> None:
     """Ajoute l'interrupteur de connexion."""
     link: BoksLink = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([BoksHoldConnectionSwitch(link)])
+    async_add_entities([BoksHoldConnectionSwitch(link), BoksRechargeableSwitch(link)])
 
 
 class BoksHoldConnectionSwitch(BoksEntity, SwitchEntity, RestoreEntity):
@@ -71,4 +71,56 @@ class BoksHoldConnectionSwitch(BoksEntity, SwitchEntity, RestoreEntity):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self._link.async_set_hold(False)
+        self.async_write_ha_state()
+
+
+class BoksRechargeableSwitch(BoksEntity, SwitchEntity, RestoreEntity):
+    """Type de piles en place — change la lecture du niveau de batterie.
+
+    La Boks n'expose pas de tension : elle publie un pourcentage qu'elle a
+    dérivé elle-même, sur une courbe d'alcaline. Ce chiffre ne veut donc pas
+    dire la même chose selon ce qu'on a mis dedans :
+
+    - **Éteint (alcalines)** — la tension décroît régulièrement, le pourcentage
+      suit la charge restante et se lit normalement.
+    - **Allumé (lithium 1,5 V rechargeables)** — un convertisseur maintient la
+      tension plate jusqu'à la coupure de la protection. La jauge reste collée
+      en haut d'échelle puis s'effondre : elle ne mesure plus la charge, tout
+      juste le décrochage. L'alerte *Piles à remplacer* bascule alors sur ce
+      décrochage plutôt que sur un seuil.
+
+    Rien n'est recalculé : la tension d'un pack régulé ne contient plus
+    l'information de charge, aucune formule ne peut la restituer. Ce réglage
+    change l'interprétation, pas la valeur affichée.
+    """
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_icon = "mdi:battery-sync"
+
+    def __init__(self, link: BoksLink) -> None:
+        super().__init__(link, "rechargeable")
+        self._attr_name = "Piles rechargeables"
+
+    @property
+    def available(self) -> bool:
+        """Toujours disponible : c'est un réglage, pas une mesure."""
+        return True
+
+    @property
+    def is_on(self) -> bool:
+        return self._link.rechargeable
+
+    async def async_added_to_hass(self) -> None:
+        """Restaure le type déclaré avant le redémarrage."""
+        await super().async_added_to_hass()
+        last = await self.async_get_last_state()
+        if last is not None and last.state == "on":
+            self._link.async_set_rechargeable(True)
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        self._link.async_set_rechargeable(True)
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        self._link.async_set_rechargeable(False)
         self.async_write_ha_state()
