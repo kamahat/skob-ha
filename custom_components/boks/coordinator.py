@@ -67,9 +67,21 @@ class BoksState:
 class BoksLink:
     """Maintient la connexion à la Boks et diffuse son état."""
 
-    def __init__(self, hass: HomeAssistant, address: str) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        address: str,
+        keepalive: float = KEEPALIVE_INTERVAL,
+        reconnect_max: float = RECONNECT_DELAY_MAX,
+    ) -> None:
         self.hass = hass
         self.address = address
+        #: Période de réarmement du watchdog de la Boks. Réglable depuis les
+        #: options : c'est le principal levier sur la consommation quand le
+        #: lien est maintenu.
+        self.keepalive = keepalive
+        #: Plafond du backoff de reconnexion.
+        self.reconnect_max = reconnect_max
         self.state = BoksState()
         self._client: BleakClientWithServiceCache | None = None
         self._listeners: list[Callable[[], None]] = []
@@ -265,7 +277,7 @@ class BoksLink:
                 break
             self._set_disconnected()
             await self._async_sleep(delay)
-            delay = min(delay * 2, RECONNECT_DELAY_MAX)
+            delay = min(delay * 2, self.reconnect_max)
 
     async def _async_session(self) -> None:
         """Une session complète : connexion, souscriptions, keepalive."""
@@ -305,7 +317,7 @@ class BoksLink:
                 await client.write_gatt_char(
                     WRITE_UUID, ASK_DOOR_STATUS_FRAME, response=True
                 )
-                await self._async_sleep(KEEPALIVE_INTERVAL)
+                await self._async_sleep(self.keepalive)
         finally:
             # Le cache GATT doit repartir vide à chaque session. Home Assistant
             # réutilise ses services en cache dès que le proxy annonce la

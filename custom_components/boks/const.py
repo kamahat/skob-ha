@@ -63,3 +63,15 @@ BATTERY_SAG_REGULATED: Final = 3
 #: chute d'au moins cette amplitude doit être confirmée par une seconde lecture
 #: avant d'être retenue.
 BATTERY_TRANSIENT_DROP: Final = 10
+
+# --- Options (réglables depuis l'interface, sans redémarrage) ---------------
+CONF_KEEPALIVE: Final = "keepalive"
+CONF_RECONNECT_MAX: Final = "reconnect_max"
+
+#: Le watchdog applicatif de la Boks ferme la connexion vers 30 s de silence.
+#: On garde une marge : au-delà, le lien tombe entre deux keepalives et se
+#: reconnecte en boucle — ce qui consomme bien plus que de le tenir.
+KEEPALIVE_MIN: Final = 5.0
+KEEPALIVE_MAX: Final = 28.0
+RECONNECT_MAX_MIN: Final = 30.0
+RECONNECT_MAX_MAX: Final = 900.0

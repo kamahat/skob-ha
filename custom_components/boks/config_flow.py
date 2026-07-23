@@ -13,9 +13,28 @@ from homeassistant.components.bluetooth import (
     BluetoothServiceInfoBleak,
     async_discovered_service_info,
 )
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
+from homeassistant.core import callback
+from homeassistant.helpers import selector
 
-from .const import CONF_ADDRESS, DOMAIN, SERVICE_UUID
+from .const import (
+    CONF_ADDRESS,
+    CONF_KEEPALIVE,
+    CONF_RECONNECT_MAX,
+    DOMAIN,
+    KEEPALIVE_INTERVAL,
+    KEEPALIVE_MAX,
+    KEEPALIVE_MIN,
+    RECONNECT_DELAY_MAX,
+    RECONNECT_MAX_MAX,
+    RECONNECT_MAX_MIN,
+    SERVICE_UUID,
+)
 
 
 def _title(address: str, name: str | None) -> str:
@@ -26,6 +45,12 @@ class BoksConfigFlow(ConfigFlow, domain=DOMAIN):
     """Ajout d'une Boks."""
 
     VERSION = 1
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(entry: ConfigEntry) -> BoksOptionsFlow:
+        """Expose les options — c'est ce qui rend l'entrée rechargeable à chaud."""
+        return BoksOptionsFlow()
 
     def __init__(self) -> None:
         self._discovered: dict[str, str] = {}
@@ -94,6 +119,60 @@ class BoksConfigFlow(ConfigFlow, domain=DOMAIN):
                             for address, name in self._discovered.items()
                         }
                     )
+                }
+            ),
+        )
+
+
+class BoksOptionsFlow(OptionsFlow):
+    """Réglages de la liaison, modifiables sans redémarrer Home Assistant.
+
+    Valider ce formulaire déclenche le rechargement de l'entrée (via
+    ``add_update_listener``) : la liaison est reconstruite avec les nouvelles
+    valeurs, sans toucher au reste de l'installation.
+
+    À noter : recharger une entrée ne recharge **pas** le code Python de
+    l'intégration, qui reste en cache dans le processus. Après une mise à jour
+    des fichiers du composant, un redémarrage de Home Assistant reste
+    nécessaire.
+    """
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Formulaire unique."""
+        if user_input is not None:
+            return self.async_create_entry(data=user_input)
+
+        options = self.config_entry.options
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_KEEPALIVE,
+                        default=options.get(CONF_KEEPALIVE, KEEPALIVE_INTERVAL),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=KEEPALIVE_MIN,
+                            max=KEEPALIVE_MAX,
+                            step=1,
+                            unit_of_measurement="s",
+                            mode=selector.NumberSelectorMode.SLIDER,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_RECONNECT_MAX,
+                        default=options.get(CONF_RECONNECT_MAX, RECONNECT_DELAY_MAX),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=RECONNECT_MAX_MIN,
+                            max=RECONNECT_MAX_MAX,
+                            step=10,
+                            unit_of_measurement="s",
+                            mode=selector.NumberSelectorMode.SLIDER,
+                        )
+                    ),
                 }
             ),
         )

@@ -13,7 +13,14 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
-from .const import CONF_ADDRESS, DOMAIN
+from .const import (
+    CONF_ADDRESS,
+    CONF_KEEPALIVE,
+    CONF_RECONNECT_MAX,
+    DOMAIN,
+    KEEPALIVE_INTERVAL,
+    RECONNECT_DELAY_MAX,
+)
 from .coordinator import BoksLink
 
 _LOGGER = logging.getLogger(__name__)
@@ -29,7 +36,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Met en place une Boks."""
     address: str = entry.data[CONF_ADDRESS]
 
-    link = BoksLink(hass, address)
+    link = BoksLink(
+        hass,
+        address,
+        keepalive=float(entry.options.get(CONF_KEEPALIVE, KEEPALIVE_INTERVAL)),
+        reconnect_max=float(entry.options.get(CONF_RECONNECT_MAX, RECONNECT_DELAY_MAX)),
+    )
     try:
         await link.async_start()
     except Exception as err:  # noqa: BLE001

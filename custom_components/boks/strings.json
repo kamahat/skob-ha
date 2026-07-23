@@ -14,5 +14,21 @@
       "no_devices_found": "Aucune Boks detectee. Verifiez qu'un adaptateur Bluetooth ou un proxy Bluetooth ESPHome est a portee, et que le dongle officiel est debranche (il monopolise la connexion).",
       "already_configured": "Cette Boks est deja configuree."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Reglages de la liaison",
+        "description": "Valider recharge la liaison sans redemarrer Home Assistant. Attention : le code du composant, lui, n'est pas recharge — apres une mise a jour des fichiers, un redemarrage reste necessaire.",
+        "data": {
+          "keepalive": "Intervalle de keepalive",
+          "reconnect_max": "Delai maximal entre deux tentatives de reconnexion"
+        },
+        "data_description": {
+          "keepalive": "La Boks ferme la connexion apres environ 30 s de silence. Augmenter cette valeur reduit les echanges (et donc la consommation) quand le lien est maintenu, mais rapproche du seuil de coupure : au-dela, le lien tombe et se reconnecte en boucle, ce qui consomme davantage.",
+          "reconnect_max": "Plafond du delai qui double a chaque echec. Une valeur elevee menage les piles quand la Boks est hors de portee ; une valeur basse raccourcit le retour en ligne."
+        }
+      }
+    }
   }
 }
