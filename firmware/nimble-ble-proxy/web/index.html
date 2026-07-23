@@ -239,8 +239,13 @@ table#portmaps button.del:hover{background:#3b0a0a}
     <!-- Firmware update. Hidden until the HTTP transport is confirmed: the
          image is ~1.3 MB, which the Web Bluetooth transport cannot carry, so
          over BLE this group stays out of the way rather than offering a
-         control that could only fail. -->
-    <div class=tgroup id=otagroup hidden>
+         control that could only fail.
+
+         Uses class=hidden, not the `hidden` attribute: .tgroup sets
+         display:flex, and an author rule beats the UA stylesheet's
+         [hidden]{display:none}, so the attribute alone would never hide it.
+         .hidden is declared after .tgroup, so it wins on source order. -->
+    <div class="tgroup hidden" id=otagroup>
       <span class=glabel>firmware</span>
       <label>file: <input type=file id=otafile accept=".bin"></label>
       <button id=otago class=danger>upload &amp; reboot</button>
@@ -1410,7 +1415,7 @@ wireControls();
     document.getElementById('app').classList.remove('hidden');
     // Firmware upload needs a multi-megabyte body, so it only exists on the
     // HTTP transport (see wireOta).
-    document.getElementById('otagroup').hidden = false;
+    document.getElementById('otagroup').classList.remove('hidden');
     if (u_rates) u_rates.setSize({ width: chartW(chartEl),  height: 320 });
     if (u_cpu)   u_cpu  .setSize({ width: chartW(chart2El), height: 200 });
     if (g_nat && u_thru) u_thru.setSize({ width: chartW(chart3El), height: 200 });
