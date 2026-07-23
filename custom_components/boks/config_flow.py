@@ -37,6 +37,7 @@ from .const import (
     SERVICE_UUID,
 )
 from .protocol import normalize_pin
+from .secret import SecretError, async_resolve, is_secret_ref
 
 
 def _title(address: str, name: str | None) -> str:
@@ -146,7 +147,22 @@ class BoksOptionsFlow(OptionsFlow):
         errors: dict[str, str] = {}
         if user_input is not None:
             code = (user_input.get(CONF_OPEN_CODE) or "").strip()
-            if code:
+            if not code:
+                user_input[CONF_OPEN_CODE] = ""
+            elif is_secret_ref(code):
+                # Référence vers secrets.yaml : on vérifie dès maintenant que la
+                # clé existe et contient un code valide, sinon l'erreur ne se
+                # révélerait qu'au premier appui sur le bouton. La valeur n'est
+                # jamais réaffichée ni stockée — seule la référence l'est.
+                try:
+                    normalize_pin(await async_resolve(self.hass, code))
+                except SecretError:
+                    errors[CONF_OPEN_CODE] = "unknown_secret"
+                except ValueError:
+                    errors[CONF_OPEN_CODE] = "invalid_open_code"
+                else:
+                    user_input[CONF_OPEN_CODE] = code
+            else:
                 # Valider ici plutôt qu'à l'appui : un code au mauvais format
                 # produit une trame que la boîte peut ignorer *sans répondre*,
                 # ce qui se diagnostique très mal une fois en service.
@@ -154,8 +170,6 @@ class BoksOptionsFlow(OptionsFlow):
                     user_input[CONF_OPEN_CODE] = normalize_pin(code)
                 except ValueError:
                     errors[CONF_OPEN_CODE] = "invalid_open_code"
-            else:
-                user_input[CONF_OPEN_CODE] = ""
             if not errors:
                 return self.async_create_entry(data=user_input)
 

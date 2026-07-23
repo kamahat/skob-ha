@@ -117,8 +117,21 @@ encrypted handshake on the Boks link. The command simply carries a 6-character
 PIN that the mailbox validates itself, answering `VALID_OPEN_CODE` (129) or
 `INVALID_OPEN_CODE` (130). The secret is the code, not the channel.
 
-Enter one in **Configure** → *Open code*. It must be 6 characters over the
-alphabet `0123456789AB` — twelve symbols, so `C` to `F` are **not** valid. The
+Enter one in **Configure** → *Open code*. The field accepts either the code
+itself or — **recommended** — a reference to `secrets.yaml`:
+
+```
+!secret boks_code1
+```
+
+Home Assistant does not resolve `!secret` inside config entries, so this
+integration resolves it itself; only the *reference* is stored, and the code
+stays in the file meant for secrets. The key is checked when you save: a
+missing key or a malformed code is reported immediately rather than at the
+first press.
+
+A code must be 6 characters over the alphabet `0123456789AB` — twelve
+symbols, so `C` to `F` are **not** valid. The
 format is checked when you save rather than when you press: a malformed frame
 can be **ignored by the mailbox without any reply**, which is close to
 undiagnosable once in service.

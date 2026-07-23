@@ -35,6 +35,11 @@ OPCODE_VALID_OPEN_CODE: Final = 129
 OPCODE_INVALID_OPEN_CODE: Final = 130
 
 CONF_OPEN_CODE: Final = "open_code"
+#: Le champ accepte aussi une référence vers ``secrets.yaml``, avec la syntaxe
+#: que les utilisateurs connaissent déjà. Home Assistant ne résout pas
+#: ``!secret`` dans les entrées de configuration : on le fait nous-mêmes
+#: (cf. secret.py), pour que le code n'ait pas à être recopié dans .storage.
+SECRET_PREFIX: Final = "!secret "
 #: Les PIN Boks s'écrivent sur douze symboles seulement — pas de C à F.
 PIN_ALPHABET: Final = "0123456789AB"
 PIN_LENGTH: Final = 6

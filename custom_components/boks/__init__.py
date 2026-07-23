@@ -23,6 +23,7 @@ from .const import (
     RECONNECT_DELAY_MAX,
 )
 from .coordinator import BoksLink
+from .secret import SecretError, async_resolve
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,12 +39,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Met en place une Boks."""
     address: str = entry.data[CONF_ADDRESS]
 
+    # Le code peut être une référence vers secrets.yaml. Une référence cassée
+    # ne doit pas empêcher l'intégration de démarrer : les capteurs de lecture
+    # n'ont rien à voir avec l'ouverture. On journalise clairement et on
+    # continue sans bouton — mieux vaut une capacité absente qu'une intégration
+    # entière indisponible.
+    try:
+        open_code = await async_resolve(hass, entry.options.get(CONF_OPEN_CODE))
+    except SecretError as err:
+        _LOGGER.error(
+            "code d'ouverture introuvable (%s) — le bouton d'ouverture ne sera "
+            "pas créé ; le reste de l'intégration fonctionne normalement",
+            err,
+        )
+        open_code = None
+
     link = BoksLink(
         hass,
         address,
         keepalive=float(entry.options.get(CONF_KEEPALIVE, KEEPALIVE_INTERVAL)),
         reconnect_max=float(entry.options.get(CONF_RECONNECT_MAX, RECONNECT_DELAY_MAX)),
-        open_code=entry.options.get(CONF_OPEN_CODE) or None,
+        open_code=open_code,
     )
     try:
         await link.async_start()

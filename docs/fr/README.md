@@ -122,9 +122,22 @@ handshake sur le lien Boks. La commande transporte simplement un PIN de
 6 caractères que la boîte valide elle-même, en répondant `VALID_OPEN_CODE`
 (129) ou `INVALID_OPEN_CODE` (130). Le secret est le code, pas le canal.
 
-Renseignez-en un dans **Configurer** → *Code d'ouverture*. Il fait
-6 caractères sur l'alphabet `0123456789AB` — douze symboles, donc `C` à `F` ne
-sont **pas** valides. Le format est vérifié à l'enregistrement plutôt qu'à
+Renseignez-en un dans **Configurer** → *Code d'ouverture*. Le champ accepte
+soit le code lui-même, soit — **recommandé** — une référence vers
+`secrets.yaml` :
+
+```
+!secret boks_code1
+```
+
+Home Assistant ne résout pas `!secret` dans les entrées de configuration :
+cette intégration le fait elle-même. Seule la *référence* est stockée, le code
+restant dans le fichier prévu pour les secrets. La clé est vérifiée à
+l'enregistrement — une clé absente ou un code mal formé est signalé
+immédiatement, pas au premier appui.
+
+Un code fait 6 caractères sur l'alphabet `0123456789AB` — douze symboles, donc
+`C` à `F` ne sont **pas** valides. Le format est vérifié à l'enregistrement plutôt qu'à
 l'appui : une trame mal formée peut être **ignorée par la boîte sans aucune
 réponse**, ce qui est quasi indiagnosticable une fois en service.
 
