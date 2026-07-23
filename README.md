@@ -12,9 +12,21 @@ moment the door state changes** — there is no polling.
 |---|---|---|
 | Door | `binary_sensor` (`door`) | pushed by the mailbox on every change |
 | Battery | `sensor` (%) | pushed on change, read on connect |
+| Battery low | `binary_sensor` (`battery`) | diagnostic — **use this, not the percentage** ([why](#battery-alkaline-vs-regulated-cells)) |
+| Hold connection | `switch` | config — see [Holding the link](#holding-the-link) |
+| Rechargeable batteries | `switch` | config — declares the cell type in place |
 | BLE link | `binary_sensor` (`connectivity`) | diagnostic |
+| Last connected | `sensor` (timestamp) | diagnostic — how fresh the values above are |
+| BLE address | `sensor` | diagnostic |
 | RSSI | `sensor` (dBm) | diagnostic, disabled by default |
 | Firmware / Software | `sensor` | diagnostic, disabled by default |
+
+![The Boks device page in Home Assistant](docs/img/ha-device-page.png)
+
+> Home Assistant splits the device page by entity category: *Sensors* first,
+> then *Configuration* (the two switches), then *Diagnostic*. The two switches
+> are **not** in the Controls block — that block only holds uncategorised
+> entities.
 
 ## Scope — read only
 
@@ -54,6 +66,67 @@ This is what allows Home Assistant to route Bluetooth to the mailbox.
 3. **Settings → Devices & services**: the mailbox is discovered automatically
    (its service UUID is declared in the manifest). Otherwise, *Add integration
    → Boks*.
+
+## Holding the link
+
+The **Hold connection** switch is the central trade-off of this integration,
+and it is yours to make:
+
+- **On** — the GATT link is held permanently. State changes are pushed the
+  instant they happen, but the mailbox keeps its radio awake: on a
+  battery-powered device, that costs. Measured on ours: **58 % → 28 % in six
+  days**, batteries found flat afterwards. The mailbox's Bluetooth LED stays
+  lit the whole time, which is a handy way to check.
+- **Off** (default) — no connection at all. Already-known values stay on
+  display, and *Last connected* tells you how old they are. Presence keeps
+  being tracked through advertisements, which cost the mailbox nothing.
+
+Two settings are exposed through **Configure** on the integration entry, and
+applied without restarting Home Assistant:
+
+| Setting | Range | What it does |
+|---|---|---|
+| Keepalive interval | 5–28 s | Main power lever while the link is held |
+| Reconnect ceiling | 30–900 s | Backoff cap when the mailbox is out of range |
+
+The keepalive is capped at 28 s on purpose: the mailbox drops the connection
+after about **30 s** of silence. Past that, the link falls between two
+keepalives and reconnects in a loop — which costs *more* than holding it.
+
+> Reloading the config entry does **not** reload the integration's Python code;
+> it stays cached in the Home Assistant process. After updating the component
+> files, a full restart is still required.
+
+## Battery: alkaline vs regulated cells
+
+The mailbox does not expose a voltage. It publishes the standard `0x2A19`
+characteristic — a percentage **it derives itself** from the pack voltage, on
+an alkaline curve (~1.6 V full → ~0.9 V empty). That number therefore only
+means something with non-regulated cells.
+
+Rechargeable 1.5 V lithium cells contain a converter that holds 1.5 V flat
+until their protection cuts out. The gauge sits at the top of the scale for
+nearly the whole service life, then collapses at once — no warning slope. In a
+series pack, the first cell to reach its cutoff takes the whole pack down, so
+the failure is abrupt.
+
+**No recalculation can fix this**: a regulated pack's voltage no longer carries
+the state of charge, and inventing a curve would produce a credible, wrong
+gauge. So the **Rechargeable batteries** switch changes the *interpretation*,
+not the value:
+
+| | Alkaline (off) | Regulated lithium (on) |
+|---|---|---|
+| The percentage | tracks remaining charge | pinned near the top |
+| Low-battery alert | threshold at 20 % | **drop** of 3 points below the observed plateau |
+
+Toggling the switch counts as declaring a fresh pack: the reference plateau is
+reset. In automations, use **Battery low** rather than the percentage — a fixed
+threshold on the percentage would never fire with regulated cells.
+
+Isolated voltage sags are filtered out: opening the door drives the motor and
+the mailbox has been seen publishing 0 % during the manoeuvre. A sharp drop is
+only retained once a second reading confirms it.
 
 ## Why NimBLE
 

@@ -12,9 +12,21 @@ où l'état de la porte change** — aucun polling.
 |---|---|---|
 | Porte | `binary_sensor` (`door`) | poussée par la boîte à chaque changement |
 | Batterie | `sensor` (%) | poussée sur changement, lue à la connexion |
+| Piles à remplacer | `binary_sensor` (`battery`) | diagnostic — **à utiliser plutôt que le pourcentage** ([pourquoi](#batterie--alcalines-ou-cellules-régulées)) |
+| Connexion maintenue | `switch` | configuration — voir [Maintenir le lien](#maintenir-le-lien) |
+| Piles rechargeables | `switch` | configuration — déclare le type de piles en place |
 | Lien BLE | `binary_sensor` (`connectivity`) | diagnostic |
+| Dernière connexion | `sensor` (horodatage) | diagnostic — dit de quand datent les valeurs ci-dessus |
+| Adresse BLE | `sensor` | diagnostic |
 | RSSI | `sensor` (dBm) | diagnostic, désactivé par défaut |
 | Firmware / Software | `sensor` | diagnostic, désactivés par défaut |
+
+![La page de l'appareil Boks dans Home Assistant](../img/ha-device-page.png)
+
+> Home Assistant répartit la page de l'appareil par catégorie d'entité :
+> *Capteurs* d'abord, puis *Configuration* (les deux switches), puis
+> *Diagnostic*. Les deux switches ne sont donc **pas** dans le bloc Contrôles,
+> qui ne reçoit que les entités sans catégorie.
 
 ## Périmètre — lecture seule
 
@@ -55,6 +67,69 @@ qui permet à Home Assistant de router le Bluetooth vers la boîte.
 3. **Paramètres → Appareils et services** : la boîte est détectée
    automatiquement (son UUID de service est déclaré dans le manifest). Sinon,
    *Ajouter une intégration → Boks*.
+
+## Maintenir le lien
+
+Le switch **Connexion maintenue** est l'arbitrage central de cette intégration,
+et il vous appartient :
+
+- **Allumé** — le lien GATT est tenu en permanence. Les changements d'état sont
+  poussés à l'instant où ils se produisent, mais la boîte garde sa radio
+  éveillée : sur un appareil à piles, cela se paie. Mesuré sur la nôtre :
+  **58 % → 28 % en six jours**, piles retrouvées à plat. La diode Bluetooth de
+  la boîte reste allumée pendant tout ce temps — c'est un moyen commode de
+  vérifier.
+- **Éteint** (par défaut) — aucune connexion. Les valeurs déjà connues restent
+  affichées, et *Dernière connexion* dit de quand elles datent. La présence
+  continue d'être suivie par les advertisements, qui ne coûtent rien à la boîte.
+
+Deux réglages sont accessibles via **Configurer** sur l'entrée d'intégration,
+et appliqués sans redémarrer Home Assistant :
+
+| Réglage | Plage | Rôle |
+|---|---|---|
+| Intervalle de keepalive | 5–28 s | Principal levier de consommation quand le lien est tenu |
+| Plafond de reconnexion | 30–900 s | Backoff quand la boîte est hors de portée |
+
+Le keepalive est borné à 28 s volontairement : la boîte ferme la connexion au
+bout d'environ **30 s** de silence. Au-delà, le lien tombe entre deux
+keepalives et se reconnecte en boucle — ce qui coûte *plus* que de le tenir.
+
+> Recharger l'entrée ne recharge **pas** le code Python de l'intégration, qui
+> reste en cache dans le processus Home Assistant. Après une mise à jour des
+> fichiers du composant, un redémarrage complet reste nécessaire.
+
+## Batterie : alcalines ou cellules régulées
+
+La boîte n'expose pas de tension. Elle publie la caractéristique standard
+`0x2A19`, c'est-à-dire un pourcentage **qu'elle dérive elle-même** de la tension
+du pack, sur une courbe d'alcaline (~1,6 V pleine → ~0,9 V vide). Ce chiffre n'a
+donc de sens qu'avec des piles non régulées.
+
+Les lithium rechargeables 1,5 V embarquent un convertisseur qui maintient 1,5 V
+plat jusqu'à la coupure de leur protection. La jauge reste en haut d'échelle
+pendant quasiment toute la durée de vie, puis s'effondre d'un coup — sans pente
+d'avertissement. Dans un pack en série, la première cellule qui atteint son
+seuil fait tomber l'ensemble : la panne est franche.
+
+**Aucun recalcul ne peut corriger cela** : la tension d'un pack régulé ne porte
+plus l'état de charge, et inventer une courbe produirait une jauge crédible et
+fausse. Le switch **Piles rechargeables** change donc l'*interprétation*, pas la
+valeur :
+
+| | Alcalines (éteint) | Lithium régulées (allumé) |
+|---|---|---|
+| Le pourcentage | suit la charge restante | collé en haut d'échelle |
+| Alerte piles faibles | seuil à 20 % | **décrochage** de 3 points sous le plateau observé |
+
+Basculer le switch vaut déclaration d'un pack neuf : le plateau de référence est
+remis à zéro. En automatisation, utilisez **Piles à remplacer** plutôt que le
+pourcentage — un seuil fixe sur le pourcentage ne se déclencherait jamais avec
+des cellules régulées.
+
+Les creux de tension passagers sont filtrés : l'ouverture de la porte sollicite
+le moteur et la boîte a déjà été vue publiant 0 % pendant la manœuvre. Une chute
+franche n'est retenue qu'une fois confirmée par une seconde lecture.
 
 ## Pourquoi NimBLE
 
