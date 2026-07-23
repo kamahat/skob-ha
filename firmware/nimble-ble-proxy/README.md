@@ -328,7 +328,15 @@ If you ever do want it, set `CONFIG_NBP_NAT_ROUTER=y` and rebuild.
 
 ### E.6 — Later updates go over WiFi
 
-Once the firmware is on the board, the cable is no longer needed:
+Once the firmware is on the board, the cable is no longer needed. Rebuild,
+then update either way:
+
+**From the dashboard** — open `http://192.168.1.42/`, find the **firmware**
+group among the controls at the top, pick your `build/nimble_ble_proxy.bin`
+and press **upload & reboot**. It asks for confirmation, shows upload
+progress, then reloads the page once the device is back.
+
+**From a terminal** — for scripted updates:
 
 ```bash
 idf.py build
@@ -338,12 +346,13 @@ curl --data-binary @build/nimble_ble_proxy.bin http://192.168.1.42/update
 ok: wrote 1284496 bytes to ota_1, rebooting
 ```
 
-The board reboots into the new firmware on its own, and Home Assistant
-reconnects without help — expect a gap of a few seconds.
+Either way the board reboots into the new firmware on its own, and Home
+Assistant reconnects without help — expect a gap of a few seconds.
 
-> **There is no upload button in the web dashboard.** Updating is command-line
-> only. The dashboard does show the exact command in its footer, with your
-> device's address already filled in, so you can copy it straight from there.
+> The upload control only appears when you reach the dashboard over HTTP. The
+> same page can be served over Web Bluetooth, which cannot carry a
+> multi-megabyte image, so the control is hidden there rather than offered and
+> doomed to fail.
 
 ---
 

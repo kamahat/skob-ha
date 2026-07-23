@@ -73,6 +73,8 @@ code{color:#bbb}
 #status{color:#888;margin-left:auto}
 #status.ok{color:#4ade80}
 #status.err{color:#f87171}
+#otastat{color:#aaa;font-size:.9em;margin-left:.5em}
+#otastat.ok{color:#4ade80}#otastat.err{color:#f87171}
 .devwrap{overflow-x:auto;max-width:100%}
 table#devices{border-collapse:collapse;font-size:12px;color:#ddd;
   margin-bottom:1em;min-width:480px}
@@ -233,6 +235,17 @@ table#portmaps button.del:hover{background:#3b0a0a}
                           autocomplete=off></label>
       <button id=reboot class=danger>reboot device</button>
     </div>
+
+    <!-- Firmware update. Hidden until the HTTP transport is confirmed: the
+         image is ~1.3 MB, which the Web Bluetooth transport cannot carry, so
+         over BLE this group stays out of the way rather than offering a
+         control that could only fail. -->
+    <div class=tgroup id=otagroup hidden>
+      <span class=glabel>firmware</span>
+      <label>file: <input type=file id=otafile accept=".bin"></label>
+      <button id=otago class=danger>upload &amp; reboot</button>
+      <span id=otastat></span>
+    </div>
   </div>
 
   <!-- CPU/temp chart sits right under the tunables that drive it, then
@@ -294,7 +307,8 @@ table#portmaps button.del:hover{background:#3b0a0a}
 </div>
 
 <footer>nimble-ble-proxy dashboard &mdash; HTTP or Web Bluetooth, same
-HTML. OTA: <code>curl --data-binary @firmware.bin http://<span id=otahost>nimble-proxy.local</span>/update</code>
+HTML. OTA: use the <b>firmware</b> control above, or
+<code>curl --data-binary @firmware.bin http://<span id=otahost>nimble-proxy.local</span>/update</code>
 <div id=fwinfo title="From esp_app_get_description() on the running image"></div></footer>
 <script>try{document.getElementById('otahost').textContent=location.host||'nimble-proxy.local';}catch(e){}</script>
 
@@ -1322,6 +1336,59 @@ function wireControls() {
     if (u_cpu)   u_cpu  .setSize({ width: chartW(chart2El), height: 200 });
     if (g_nat && u_thru) u_thru.setSize({ width: chartW(chart3El), height: 200 });
   });
+
+  wireOta();
+}
+
+// Firmware upload. POST /update takes the raw image as the request body, so
+// the file object goes straight through with no multipart wrapper.
+//
+// XMLHttpRequest rather than fetch: it is the only way to get upload progress,
+// and a 1.3 MB push over WiFi is long enough that a silent UI reads as a
+// hang. The request deliberately has no timeout — the device writes to flash
+// as it receives, and a slow link can legitimately take minutes.
+function wireOta() {
+  const file = document.getElementById('otafile');
+  const go   = document.getElementById('otago');
+  const stat = document.getElementById('otastat');
+  if (!file || !go || !stat) return;
+
+  const say = (msg, cls) => { stat.textContent = msg; stat.className = cls || ''; };
+
+  go.onclick = () => {
+    const f = file.files && file.files[0];
+    if (!f) { say('pick a .bin first'); return; }
+    // Flashing reboots the device and there is no undo, so make it deliberate.
+    if (!confirm(`Flash ${f.name} (${(f.size / 1048576).toFixed(2)} MB) and reboot?`)) return;
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/update');
+    go.disabled = file.disabled = true;
+
+    xhr.upload.onprogress = e => {
+      if (!e.lengthComputable) { say('uploading…'); return; }
+      say(`uploading ${Math.round((e.loaded / e.total) * 100)}%`);
+    };
+    xhr.onload = () => {
+      go.disabled = file.disabled = false;
+      // The device answers, then reboots ~500 ms later, so this response is
+      // the last thing we hear from the old image.
+      if (xhr.status === 200) {
+        say((xhr.responseText || 'ok').trim() + ' — reloading in 15 s', 'ok');
+        setTimeout(() => location.reload(), 15000);
+      } else {
+        say(`failed: ${xhr.status} ${(xhr.responseText || '').trim()}`, 'err');
+      }
+    };
+    // Fires when the connection drops mid-transfer. Not necessarily fatal —
+    // if the device already committed the image it may simply have rebooted
+    // on us — so say what happened rather than claiming failure.
+    xhr.onerror = () => {
+      go.disabled = file.disabled = false;
+      say('connection lost — if the device rebooted, reload to check', 'err');
+    };
+    xhr.send(f);
+  };
 }
 
 // ---- boot -------------------------------------------------------------
@@ -1341,6 +1408,9 @@ wireControls();
     // chrome and start polling immediately.
     document.getElementById('controls').classList.add('hidden');
     document.getElementById('app').classList.remove('hidden');
+    // Firmware upload needs a multi-megabyte body, so it only exists on the
+    // HTTP transport (see wireOta).
+    document.getElementById('otagroup').hidden = false;
     if (u_rates) u_rates.setSize({ width: chartW(chartEl),  height: 320 });
     if (u_cpu)   u_cpu  .setSize({ width: chartW(chart2El), height: 200 });
     if (g_nat && u_thru) u_thru.setSize({ width: chartW(chart3El), height: 200 });

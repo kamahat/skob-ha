@@ -29,7 +29,7 @@ remain under their original MIT terms.
 ## What was changed relative to upstream
 
 One source modification needed to build on Windows, one build-default change,
-and one file rename:
+one dashboard feature, and one file rename:
 
 - `components/api_proto/CMakeLists.txt` — the nanopb generator was invoked as
   hard-coded `python3`, which does not exist as an executable on Windows (it
@@ -52,6 +52,14 @@ and one file rename:
   from it. Verified to build clean; it also trims ~14 KB of flash (1 284 496 →
   1 269 824 bytes) plus the router's runtime footprint. Set it back to `y` if
   you want the router.
+
+- `web/index.html` — added a firmware-upload control to the dashboard. The
+  footer already printed the OTA curl command but there was no way to perform
+  an update from the browser; `POST /update` accepts the raw image as the
+  request body, so no firmware-side change was needed. Hidden unless the page
+  is reached over HTTP, since the Web Bluetooth transport cannot carry a
+  ~1.3 MB image. Offered upstream as
+  [`feat/dashboard-firmware-upload`](https://github.com/kamahat/nimble-ble-proxy-esphome/tree/feat/dashboard-firmware-upload).
 
 - `README.md` → `README-DETAIL.md` — **renamed, contents untouched.** The
   upstream author's document is a technical reference, not a build guide, and

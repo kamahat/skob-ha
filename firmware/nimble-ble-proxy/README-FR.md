@@ -332,7 +332,16 @@ Si vous y tenez malgré tout, passez `CONFIG_NBP_NAT_ROUTER=y` et recompilez.
 
 ### E.6 — Les mises à jour suivantes passent par le WiFi
 
-Une fois le firmware sur la carte, le câble n'est plus nécessaire :
+Une fois le firmware sur la carte, le câble n'est plus nécessaire. Recompilez,
+puis mettez à jour au choix :
+
+**Depuis le tableau de bord** — ouvrez `http://192.168.1.42/`, repérez le
+groupe **firmware** parmi les réglages en haut de page, sélectionnez votre
+`build/nimble_ble_proxy.bin` et cliquez sur **upload & reboot**. Une
+confirmation est demandée, la progression s'affiche, puis la page se recharge
+une fois la carte revenue.
+
+**Depuis un terminal** — pour les mises à jour scriptées :
 
 ```bash
 idf.py build
@@ -342,13 +351,14 @@ curl --data-binary @build/nimble_ble_proxy.bin http://192.168.1.42/update
 ok: wrote 1284496 bytes to ota_1, rebooting
 ```
 
-La carte redémarre seule sur le nouveau firmware, et Home Assistant se
-reconnecte sans intervention — comptez quelques secondes de coupure.
+Dans les deux cas la carte redémarre seule sur le nouveau firmware, et Home
+Assistant se reconnecte sans intervention — comptez quelques secondes de
+coupure.
 
-> **Il n'y a pas de bouton de téléversement dans le tableau de bord.** La mise à
-> jour se fait uniquement en ligne de commande. Le tableau de bord affiche
-> toutefois la commande exacte en pied de page, avec l'adresse de votre appareil
-> déjà renseignée : vous pouvez la copier telle quelle.
+> Le contrôle de téléversement n'apparaît que si vous atteignez le tableau de
+> bord en HTTP. La même page peut être servie via Web Bluetooth, qui ne peut pas
+> transporter une image de plusieurs mégaoctets : le contrôle y est donc masqué
+> plutôt que proposé et voué à l'échec.
 
 ---
 
