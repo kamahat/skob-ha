@@ -47,14 +47,35 @@ Optionnel et modifiable ensuite sans reflasher : le nom d'hôte de l'appareil
 
 ---
 
-## B. Où les renseigner
+## B. Récupérer les sources, puis renseigner les paramètres
+
+### B.1 — Cloner le dépôt
+
+Tout ce qui suit s'exécute depuis le répertoire du firmware : commencez donc
+par là, cela rend chaque commande ultérieure sans ambiguïté :
+
+```bash
+git clone https://github.com/kamahat/skob-ha.git
+cd skob-ha/firmware/nimble-ble-proxy
+```
+
+Vous devez maintenant voir `CMakeLists.txt`, `main/`, `components/` et
+`include/` dans le répertoire courant :
+
+```bash
+ls
+# CMakeLists.txt  components  include  main  partitions.csv  sdkconfig.defaults  ...
+```
+
+**Restez dans ce répertoire pour tout le reste du guide.**
+
+### B.2 — Renseigner les identifiants WiFi
 
 Le fichier d'identifiants n'existe pas encore : le dépôt fournit un modèle, et
 le vrai fichier est volontairement ignoré par git pour que votre mot de passe ne
 se retrouve jamais dans un commit :
 
 ```bash
-cd firmware/nimble-ble-proxy
 cp include/wifi_creds.h.example include/wifi_creds.h
 ```
 
@@ -103,9 +124,9 @@ pas embarqué ici (il a sa propre licence). Clonez-le exactement là où la
 compilation l'attend :
 
 ```bash
-cd firmware/nimble-ble-proxy/components/api_proto
+cd components/api_proto
 git clone --depth 1 https://github.com/nanopb/nanopb.git nanopb
-cd ../..
+cd ../..          # retour dans firmware/nimble-ble-proxy
 ```
 
 La compilation de référence utilisait le commit nanopb
@@ -292,25 +313,22 @@ Bluetooth est vivante. Le tableau de bord web sur `http://192.168.1.42/` montre
 la même chose, plus chaque appareil vu avec sa puissance de signal — c'est
 l'outil qu'il vous faut pour choisir l'emplacement de la carte.
 
-### E.5 — Désactiver le mode routeur WiFi
+### E.5 — À propos du mode routeur WiFi
 
-Le firmware sait aussi faire point d'accès WiFi et routeur. **Désactivez-le** :
-ici la carte n'est qu'un pont, et un point d'accès vole du temps d'antenne au
-Bluetooth sur l'unique radio 2,4 GHz — il fait aussi pencher l'arbitre de
-coexistence du côté du WiFi.
+Rien à faire. Le firmware sait aussi faire point d'accès WiFi et routeur, et
+l'amont le livre **activé** ; il est désactivé **à la compilation** dans cette
+copie (`CONFIG_NBP_NAT_ROUTER=n` dans `sdkconfig.defaults`).
 
-```bash
-curl -X POST "http://192.168.1.42/nat?enabled=0"
-```
-```json
-{"ok":true}
-```
+C'est délibéré : ici la carte n'est qu'un pont, et un point d'accès vole du
+temps d'antenne au Bluetooth sur l'unique radio 2,4 GHz — il fait aussi pencher
+l'arbitre de coexistence du côté du WiFi, et coûte de la flash et de la DRAM sur
+une carte sans PSRAM.
 
-Le réglage survit aux redémarrages.
+Si vous y tenez malgré tout, passez `CONFIG_NBP_NAT_ROUTER=y` et recompilez.
 
-> Les endpoints de configuration exigent **`curl -X POST`**. Un `curl` nu
-> effectue un GET et se contente de relire la valeur sans rien appliquer — une
-> demi-heure vite perdue.
+> Si vous utilisez d'autres endpoints de configuration, sachez qu'ils exigent
+> **`curl -X POST`**. Un `curl` nu effectue un GET et se contente de relire la
+> valeur sans rien appliquer — une demi-heure vite perdue.
 
 ### E.6 — Les mises à jour suivantes passent par le WiFi
 
@@ -347,7 +365,6 @@ l'intégration ne la trouvera jamais, si bien installée soit-elle.
 | `GET /devices` | Appareils vus avec leur RSSI — pour choisir l'emplacement |
 | `GET /log?since=0` | Journal du firmware, à distance |
 | `POST /level?nimble=<0..5>` | Verbosité des journaux NimBLE |
-| `POST /nat?enabled=0` | Désactiver le mode routeur WiFi |
 | `POST /update` | Mise à jour OTA |
 | `POST /reboot` | Redémarrage |
 

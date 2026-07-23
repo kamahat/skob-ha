@@ -28,7 +28,8 @@ remain under their original MIT terms.
 
 ## What was changed relative to upstream
 
-One source modification, needed to build on Windows, plus one file rename:
+One source modification needed to build on Windows, one build-default change,
+and one file rename:
 
 - `components/api_proto/CMakeLists.txt` — the nanopb generator was invoked as
   hard-coded `python3`, which does not exist as an executable on Windows (it
@@ -39,6 +40,18 @@ One source modification, needed to build on Windows, plus one file rename:
   This is a portability fix, not a functional change — behaviour on Linux and
   macOS is unchanged. Submitted upstream as
   [fl4p/nimble-ble-proxy-esphome#1](https://github.com/fl4p/nimble-ble-proxy-esphome/pull/1).
+
+- `sdkconfig.defaults` — `CONFIG_NBP_NAT_ROUTER` switched from `y` to `n`.
+  Upstream pins it on ("so the build is testable" during clone development),
+  which brings up a WiFi SoftAP. Here the board is a pure WiFi↔BLE bridge and
+  never a router: the access point would compete for the single 2.4 GHz radio,
+  tip the coexistence arbiter towards WiFi, and cost flash and DRAM on a
+  no-PSRAM S3 — while forcing every user through a runtime `POST /nat?enabled=0`.
+  Note `n` is what upstream's own Kconfig and README table declare as the
+  default, so this restores the documented behaviour rather than departing
+  from it. Verified to build clean; it also trims ~14 KB of flash (1 284 496 →
+  1 269 824 bytes) plus the router's runtime footprint. Set it back to `y` if
+  you want the router.
 
 - `README.md` → `README-DETAIL.md` — **renamed, contents untouched.** The
   upstream author's document is a technical reference, not a build guide, and

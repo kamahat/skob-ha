@@ -46,14 +46,35 @@ Optional, changeable later without reflashing: the device hostname
 
 ---
 
-## B. Where to put them
+## B. Get the sources, then set your parameters
+
+### B.1 — Clone the repository
+
+Everything below runs from the firmware directory, so start here — it makes
+every later command unambiguous:
+
+```bash
+git clone https://github.com/kamahat/skob-ha.git
+cd skob-ha/firmware/nimble-ble-proxy
+```
+
+You should now see `CMakeLists.txt`, `main/`, `components/` and `include/`
+in the current directory:
+
+```bash
+ls
+# CMakeLists.txt  components  include  main  partitions.csv  sdkconfig.defaults  ...
+```
+
+**Stay in this directory for the rest of the guide.**
+
+### B.2 — Fill in the WiFi credentials
 
 The credentials file does not exist yet — the repository ships a template, and
 the real file is deliberately ignored by git so your password never lands in a
 commit:
 
 ```bash
-cd firmware/nimble-ble-proxy
 cp include/wifi_creds.h.example include/wifi_creds.h
 ```
 
@@ -102,9 +123,9 @@ bundled here (it carries its own license). Clone it exactly where the build
 expects it:
 
 ```bash
-cd firmware/nimble-ble-proxy/components/api_proto
+cd components/api_proto
 git clone --depth 1 https://github.com/nanopb/nanopb.git nanopb
-cd ../..
+cd ../..          # back to firmware/nimble-ble-proxy
 ```
 
 Reference build used nanopb commit `d21fa5084287ab67da2f166f4def045bedcb535e`.
@@ -288,25 +309,22 @@ The web dashboard at `http://192.168.1.42/` shows the same, plus every device
 seen with its signal strength — which is the tool you want when choosing where
 to put the board.
 
-### E.5 — Turn off the WiFi router mode
+### E.5 — About the WiFi router mode
 
-The firmware can also act as a WiFi access point and router. **Switch that
-off**: here the board is only a bridge, and an access point steals airtime from
-Bluetooth on the single 2.4 GHz radio — it also tips the coexistence arbiter in
-WiFi's favour.
+Nothing to do. The firmware can also act as a WiFi access point and router, and
+upstream ships that **enabled**; it is switched **off at compile time** in this
+copy (`CONFIG_NBP_NAT_ROUTER=n` in `sdkconfig.defaults`).
 
-```bash
-curl -X POST "http://192.168.1.42/nat?enabled=0"
-```
-```json
-{"ok":true}
-```
+That is deliberate: here the board is only a bridge, and an access point steals
+airtime from Bluetooth on the single 2.4 GHz radio — it also tips the
+coexistence arbiter in WiFi's favour, and costs flash and DRAM on a board with
+no PSRAM.
 
-The setting survives reboots.
+If you ever do want it, set `CONFIG_NBP_NAT_ROUTER=y` and rebuild.
 
-> Configuration endpoints need **`curl -X POST`**. A plain `curl` performs a GET
-> and merely reads the value back without changing anything — an easy half-hour
-> to lose.
+> Should you use other configuration endpoints, note they need **`curl -X POST`**.
+> A plain `curl` performs a GET and merely reads the value back without changing
+> anything — an easy half-hour to lose.
 
 ### E.6 — Later updates go over WiFi
 
@@ -343,7 +361,6 @@ find it, however correctly it is installed.
 | `GET /devices` | Devices seen with RSSI — use this to choose a location |
 | `GET /log?since=0` | Firmware log, remotely |
 | `POST /level?nimble=<0..5>` | NimBLE log verbosity |
-| `POST /nat?enabled=0` | Disable the WiFi router mode |
 | `POST /update` | OTA update |
 | `POST /reboot` | Reboot |
 
