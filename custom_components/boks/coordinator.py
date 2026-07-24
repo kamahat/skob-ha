@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from bleak.backends.characteristic import BleakGATTCharacteristic
@@ -67,8 +67,6 @@ class BoksState:
     rssi: int | None = None
     firmware: str | None = None
     software: str | None = None
-    #: Renseigné une fois la première lecture faite (nom d'appareil lisible).
-    name: str | None = None
     #: Dernière fois que le lien GATT a été établi. Sert de diagnostic et dit
     #: depuis quand les valeurs affichées datent quand le lien est coupé.
     last_connected: datetime | None = None
@@ -122,8 +120,9 @@ class BoksLink:
         #: Le jeu de piles en place est-il à tension régulée (lithium 1,5 V
         #: rechargeable) ? Piloté par le switch « piles rechargeables ».
         self._rechargeable = False
-        #: Baisse franche en attente de confirmation (cf. BATTERY_TRANSIENT_DROP).
-        self._battery_candidate: int | None = None
+        #: Une chute franche est-elle en attente de confirmation par la lecture
+        #: suivante ? (cf. BATTERY_TRANSIENT_DROP et _accept_battery.)
+        self._battery_sagging = False
 
     @property
     def hold(self) -> bool:
@@ -177,20 +176,34 @@ class BoksLink:
 
         L'ouverture de la porte sollicite le moteur : la tension plonge le temps
         de la manœuvre et la Boks a déjà publié 0 % dans ces conditions. Une
-        remontée est toujours retenue immédiatement ; une chute franche ne l'est
-        qu'après confirmation par une seconde lecture identique.
+        chute franche est donc mise en attente une lecture ; elle n'est retenue
+        que si la lecture suivante reste basse, confirmant une baisse réelle et
+        non un creux d'une seule mesure.
+
+        Point important : la confirmation ne porte **pas** sur une valeur
+        identique. Une décharge réelle — surtout l'effondrement brutal des
+        lithium régulées — enchaîne des valeurs différentes (p. ex. 100 → 40 →
+        10). Exiger deux lectures égales laisserait alors le capteur bloqué en
+        haut d'échelle pendant que les piles meurent. On confirme donc « encore
+        bas », pas « le même chiffre ».
         """
         current = self.state.battery
-        if current is not None and level <= current - BATTERY_TRANSIENT_DROP:
-            if self._battery_candidate != level:
-                self._battery_candidate = level
-                _LOGGER.debug(
-                    "creux batterie %s%% ignoré (courant %s%%), en attente de confirmation",
-                    level,
-                    current,
-                )
-                return False
-        self._battery_candidate = None
+        is_sharp_drop = (
+            current is not None and level <= current - BATTERY_TRANSIENT_DROP
+        )
+        if is_sharp_drop and not self._battery_sagging:
+            # Première lecture basse : peut n'être qu'un creux moteur. On la met
+            # en attente sans la retenir (la valeur courante ne bouge pas).
+            self._battery_sagging = True
+            _LOGGER.debug(
+                "creux batterie %s%% ignoré (courant %s%%), en attente de confirmation",
+                level,
+                current,
+            )
+            return False
+        # Soit ce n'est pas une chute franche (remontée ou stabilité), soit
+        # c'est une seconde lecture basse consécutive : baisse confirmée.
+        self._battery_sagging = False
         return True
 
     @callback
@@ -411,7 +424,6 @@ class BoksLink:
         self._client = client
         self.state.connected = True
         self.state.last_connected = datetime.now(timezone.utc)
-        self.state.name = device.name or self.address
         _LOGGER.debug("connecté à %s", self.address)
 
         try:

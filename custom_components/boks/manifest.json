@@ -8,14 +8,14 @@
   "dependencies": [
     "bluetooth_adapters"
   ],
-  "documentation": "https://github.com/kamahat/skob",
+  "documentation": "https://github.com/kamahat/skob-ha",
   "integration_type": "device",
   "iot_class": "local_push",
-  "issue_tracker": "https://github.com/kamahat/skob/issues",
+  "issue_tracker": "https://github.com/kamahat/skob-ha/issues",
   "requirements": [
     "bleak-retry-connector>=3.5.0"
   ],
-  "version": "0.1.1",
+  "version": "0.2.0",
   "bluetooth": [
     {
       "service_uuid": "a7630001-f491-4f21-95ea-846ba586e361",
