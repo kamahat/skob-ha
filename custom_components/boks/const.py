@@ -34,6 +34,12 @@ OPCODE_OPEN_DOOR: Final = 1
 OPCODE_VALID_OPEN_CODE: Final = 129
 OPCODE_INVALID_OPEN_CODE: Final = 130
 
+#: Identifiant lisible de la boîte (ex. « F540 »). La Boks ne l'expose pas :
+#: son Serial Number GATT (0x2A25) renvoie sa propre adresse MAC, et aucune
+#: characteristic ne porte cette référence — elle vient de l'étiquette ou du
+#: compte. Elle doit donc être saisie, et sert à distinguer plusieurs boîtes.
+CONF_LABEL: Final = "label"
+
 CONF_OPEN_CODE: Final = "open_code"
 #: Le champ accepte aussi une référence vers ``secrets.yaml``, avec la syntaxe
 #: que les utilisateurs connaissent déjà. Home Assistant ne résout pas

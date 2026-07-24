@@ -110,6 +110,38 @@ keepalives and reconnects in a loop — which costs *more* than holding it.
 > it stays cached in the Home Assistant process. After updating the component
 > files, a full restart is still required.
 
+## Several mailboxes
+
+Each mailbox is a separate config entry, keyed by its BLE address, so adding
+more than one just works. One thing does not: **naming**.
+
+The Boks exposes no readable identifier of its own. Its GATT *Serial Number*
+(`0x2A25`) returns its own MAC address, there is no *Hardware Revision*
+characteristic at all, and the advertised name is the MAC again. The reference
+printed on the mailbox or shown in your account — `F540` and the like — is
+**not** available over Bluetooth and cannot be discovered.
+
+So enter it yourself, in **Configure** → *Mailbox identifier*. The device is
+then named `Boks F540` instead of plain `Boks`, and an *Identifier* diagnostic
+sensor exposes it for templates and automations. Without it, two mailboxes
+would both be called `Boks` and their entities would be indistinguishable.
+
+Read from an actual mailbox, for reference:
+
+| Characteristic | Value |
+|---|---|
+| Manufacturer Name (`0x2A29`) | `BOKS` |
+| Model Number (`0x2A24`) | `2.0` |
+| Serial Number (`0x2A25`) | the MAC address — **not** a serial |
+| Firmware Revision (`0x2A26`) | `10/125` |
+| Hardware Revision (`0x2A27`) | **absent** |
+| Software Revision (`0x2A28`) | `4.6.0` |
+
+> Setting the identifier renames the device, but Home Assistant does **not**
+> rewrite existing `entity_id`s. On an entry that already exists they keep
+> their current names; rename them manually, or remove and re-add the entry if
+> you want them regenerated.
+
 ## Opening the door
 
 Opening requires a secret, but **not** a cryptographic session: there is no

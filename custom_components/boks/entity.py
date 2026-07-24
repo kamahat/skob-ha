@@ -22,7 +22,11 @@ class BoksEntity(Entity):
             connections={(CONNECTION_BLUETOOTH, link.address)},
             manufacturer="Boks",
             model="Boîte aux lettres connectée",
-            name="Boks",
+            # La boîte n'expose aucun identifiant lisible : son Serial Number
+            # GATT renvoie sa propre MAC. Sans l'identifiant saisi par
+            # l'utilisateur, deux boîtes s'appelleraient toutes deux « Boks »
+            # et leurs entités seraient indiscernables.
+            name=f"Boks {link.label}" if link.label else "Boks",
         )
 
     async def async_added_to_hass(self) -> None:

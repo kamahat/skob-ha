@@ -115,6 +115,41 @@ keepalives et se reconnecte en boucle — ce qui coûte *plus* que de le tenir.
 > reste en cache dans le processus Home Assistant. Après une mise à jour des
 > fichiers du composant, un redémarrage complet reste nécessaire.
 
+## Plusieurs boîtes
+
+Chaque boîte est une entrée de configuration distincte, identifiée par son
+adresse BLE : en ajouter plusieurs fonctionne d'emblée. Une chose ne suit pas :
+le **nom**.
+
+La Boks n'expose aucun identifiant lisible qui lui soit propre. Sa
+characteristic GATT *Serial Number* (`0x2A25`) renvoie sa propre adresse MAC,
+il n'y a pas de *Hardware Revision* du tout, et le nom annoncé est encore la
+MAC. La référence imprimée sur la boîte ou affichée dans votre compte — du
+type `F540` — n'est **pas** disponible en Bluetooth et ne peut pas être
+découverte.
+
+Saisissez-la donc vous-même, dans **Configurer** → *Identifiant de la boîte*.
+L'appareil s'appelle alors `Boks F540` plutôt que simplement `Boks`, et un
+capteur de diagnostic *Identifiant* l'expose pour vos templates et
+automatisations. Sans lui, deux boîtes porteraient toutes deux le nom `Boks` et
+leurs entités seraient indiscernables.
+
+Relevé sur une boîte réelle, pour référence :
+
+| Characteristic | Valeur |
+|---|---|
+| Manufacturer Name (`0x2A29`) | `BOKS` |
+| Model Number (`0x2A24`) | `2.0` |
+| Serial Number (`0x2A25`) | l'adresse MAC — **pas** un numéro de série |
+| Firmware Revision (`0x2A26`) | `10/125` |
+| Hardware Revision (`0x2A27`) | **absente** |
+| Software Revision (`0x2A28`) | `4.6.0` |
+
+> Renseigner l'identifiant renomme l'appareil, mais Home Assistant ne réécrit
+> **pas** les `entity_id` existants. Sur une entrée déjà en place, ils
+> conservent leur nom actuel ; renommez-les à la main, ou supprimez et
+> ré-ajoutez l'entrée pour les faire régénérer.
+
 ## Ouvrir la porte
 
 Ouvrir exige un secret, mais **pas** une session chiffrée : il n'y a aucun

@@ -23,8 +23,12 @@ async def async_setup_entry(
 ) -> None:
     """Ajoute les capteurs."""
     link: BoksLink = hass.data[DOMAIN][entry.entry_id]
+    entities: list[SensorEntity] = []
+    if link.label:
+        entities.append(BoksLabelSensor(link))
     async_add_entities(
-        [
+        entities
+        + [
             BoksBatterySensor(link),
             BoksRssiSensor(link),
             BoksVersionSensor(link, "firmware", "Firmware"),
@@ -144,3 +148,30 @@ class BoksAddressSensor(BoksEntity, SensorEntity):
     @property
     def native_value(self) -> str:
         return self._link.address
+
+
+class BoksLabelSensor(BoksEntity, SensorEntity):
+    """Identifiant lisible de la boîte (ex. « F540 »).
+
+    La Boks ne l'expose pas : sa characteristic *Serial Number* (0x2A25)
+    renvoie sa propre adresse MAC, et aucune autre ne porte cette référence.
+    Elle est donc saisie par l'utilisateur, et exposée ici pour être
+    exploitable en automatisation ou en template quand plusieurs boîtes
+    coexistent.
+    """
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:identifier"
+
+    def __init__(self, link: BoksLink) -> None:
+        super().__init__(link, "label")
+        self._attr_name = "Identifiant"
+
+    @property
+    def available(self) -> bool:
+        """Valeur de configuration : toujours connue."""
+        return True
+
+    @property
+    def native_value(self) -> str | None:
+        return self._link.label

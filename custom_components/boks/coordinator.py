@@ -87,6 +87,7 @@ class BoksLink:
         keepalive: float = KEEPALIVE_INTERVAL,
         reconnect_max: float = RECONNECT_DELAY_MAX,
         open_code: str | None = None,
+        label: str | None = None,
     ) -> None:
         self.hass = hass
         self.address = address
@@ -99,6 +100,9 @@ class BoksLink:
         #: Code d'ouverture. Absent = pas de bouton d'ouverture, l'intégration
         #: reste strictement en lecture.
         self.open_code = open_code
+        #: Identifiant lisible saisi par l'utilisateur (ex. « F540 »). Sert à
+        #: nommer l'appareil : sans lui, deux boîtes s'appelleraient « Boks ».
+        self.label = label
         #: Résultat attendu d'un OPEN_DOOR en cours (129/130).
         self._open_result: asyncio.Future[bool] | None = None
         #: Sérialise les ouvertures : deux commandes concurrentes se

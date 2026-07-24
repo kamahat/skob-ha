@@ -16,6 +16,7 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from .const import (
     CONF_ADDRESS,
     CONF_KEEPALIVE,
+    CONF_LABEL,
     CONF_OPEN_CODE,
     CONF_RECONNECT_MAX,
     DOMAIN,
@@ -60,6 +61,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         keepalive=float(entry.options.get(CONF_KEEPALIVE, KEEPALIVE_INTERVAL)),
         reconnect_max=float(entry.options.get(CONF_RECONNECT_MAX, RECONNECT_DELAY_MAX)),
         open_code=open_code,
+        label=(entry.options.get(CONF_LABEL) or "").strip() or None,
     )
     try:
         await link.async_start()

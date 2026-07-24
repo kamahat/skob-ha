@@ -25,6 +25,7 @@ from homeassistant.helpers import selector
 from .const import (
     CONF_ADDRESS,
     CONF_KEEPALIVE,
+    CONF_LABEL,
     CONF_OPEN_CODE,
     CONF_RECONNECT_MAX,
     DOMAIN,
@@ -146,6 +147,7 @@ class BoksOptionsFlow(OptionsFlow):
         """Formulaire unique."""
         errors: dict[str, str] = {}
         if user_input is not None:
+            user_input[CONF_LABEL] = (user_input.get(CONF_LABEL) or "").strip()
             code = (user_input.get(CONF_OPEN_CODE) or "").strip()
             if not code:
                 user_input[CONF_OPEN_CODE] = ""
@@ -178,6 +180,10 @@ class BoksOptionsFlow(OptionsFlow):
             step_id="init",
             data_schema=vol.Schema(
                 {
+                    vol.Optional(
+                        CONF_LABEL,
+                        default=options.get(CONF_LABEL, ""),
+                    ): selector.TextSelector(),
                     vol.Required(
                         CONF_KEEPALIVE,
                         default=options.get(CONF_KEEPALIVE, KEEPALIVE_INTERVAL),
