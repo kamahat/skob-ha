@@ -124,15 +124,19 @@ BATTERY_TRANSIENT_DROP: Final = 10
 # --- Options (réglables depuis l'interface, sans redémarrage) ---------------
 CONF_KEEPALIVE: Final = "keepalive"
 CONF_RECONNECT_MAX: Final = "reconnect_max"
-#: Intervalle (minutes) d'un rafraîchissement périodique : une connexion brève
-#: qui relit état + batterie + historique, même quand le lien n'est pas
-#: maintenu. 0 = désactivé.
+#: Intervalle (minutes) de relecture de l'historique (VIGIK / code) — dans les
+#: deux régimes : en connexion tenue, une re-demande périodique dans la même
+#: session (sinon l'historique n'est lu qu'une fois, à la connexion) ; lien
+#: non tenu, une connexion brève dédiée. Objectif : reproduire ce que fait le
+#: BoksLINK officiel — surveillance continue — mais en poussant vers Home
+#: Assistant plutôt que vers le cloud Boks. 0 = désactivé.
 #:
 #: ⚠️ Défaut **0** volontairement : lire l'historique **draine** le journal de
 #: la boîte (curseur persistant), et ce journal sert de **backlog au BoksLINK
 #: officiel** quand il est hors ligne. Un drain périodique local risquerait de
 #: lui **voler des événements** → ouvertures manquantes dans l'historique cloud
-#: officiel. À n'activer qu'en connaissance de cause.
+#: officiel. Sans incidence tant que le BoksLINK reste débranché/hors ligne —
+#: mais reste un choix explicite de l'utilisateur, pas un défaut.
 CONF_REFRESH_INTERVAL: Final = "refresh_interval"
 REFRESH_INTERVAL_DEFAULT: Final = 0
 REFRESH_INTERVAL_MIN: Final = 0

@@ -528,17 +528,34 @@ class BoksLink:
             # (refresh_interval > 0). REQUEST_LOGS *draine* le journal (curseur
             # persistant côté boîte) qui sert de backlog au BoksLINK officiel :
             # on ne draine donc jamais sans que l'utilisateur l'ait choisi.
+            loop = asyncio.get_running_loop()
+            next_history: float | None = None
             if self.refresh_interval > 0:
                 try:
                     await self._async_read_history(client)
                 except (BleakError, EOFError) as err:
                     _LOGGER.debug("lecture historique impossible: %s", err)
+                next_history = loop.time() + self.refresh_interval * 60
 
+            # Objectif : reproduire ce que fait le BoksLINK officiel — une
+            # connexion tenue en continu, avec surveillance active — mais en
+            # poussant vers Home Assistant plutôt que vers le cloud Boks. Porte
+            # et batterie sont déjà en push (notifications) ; l'historique, lui,
+            # n'est PAS poussé par la boîte et doit être re-demandé pour capter
+            # les ouvertures survenues pendant que le lien reste ouvert — sinon
+            # une session tenue des heures ne verrait plus jamais de nouvelle
+            # date VIGIK/code après sa lecture initiale.
             while not self._stop.is_set() and client.is_connected:
                 # Réarme le watchdog de la Boks et rafraîchit l'état de la porte.
                 await client.write_gatt_char(
                     WRITE_UUID, ASK_DOOR_STATUS_FRAME, response=True
                 )
+                if next_history is not None and loop.time() >= next_history:
+                    try:
+                        await self._async_read_history(client)
+                    except (BleakError, EOFError) as err:
+                        _LOGGER.debug("re-lecture historique impossible: %s", err)
+                    next_history = loop.time() + self.refresh_interval * 60
                 await self._async_sleep(self.keepalive)
         finally:
             # Le cache GATT doit repartir vide à chaque session. Home Assistant
