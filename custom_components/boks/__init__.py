@@ -19,9 +19,11 @@ from .const import (
     CONF_LABEL,
     CONF_OPEN_CODE,
     CONF_RECONNECT_MAX,
+    CONF_REFRESH_INTERVAL,
     DOMAIN,
     KEEPALIVE_INTERVAL,
     RECONNECT_DELAY_MAX,
+    REFRESH_INTERVAL_DEFAULT,
 )
 from .coordinator import BoksLink
 from .secret import SecretError, async_resolve
@@ -62,6 +64,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         reconnect_max=float(entry.options.get(CONF_RECONNECT_MAX, RECONNECT_DELAY_MAX)),
         open_code=open_code,
         label=(entry.options.get(CONF_LABEL) or "").strip() or None,
+        refresh_interval=int(
+            entry.options.get(CONF_REFRESH_INTERVAL, REFRESH_INTERVAL_DEFAULT)
+        ),
     )
     try:
         await link.async_start()

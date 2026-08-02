@@ -7,7 +7,9 @@
       },
       "user": {
         "description": "Choisissez la Boks a ajouter.",
-        "data": { "address": "Appareil" }
+        "data": {
+          "address": "Appareil"
+        }
       }
     },
     "abort": {
@@ -24,13 +26,15 @@
           "label": "Identifiant de la boite (optionnel)",
           "keepalive": "Intervalle de keepalive",
           "reconnect_max": "Delai maximal entre deux tentatives de reconnexion",
-          "open_code": "Code d'ouverture (optionnel)"
+          "open_code": "Code d'ouverture (optionnel)",
+          "refresh_interval": "Intervalle de rafraichissement (minutes, 0 = desactive)"
         },
         "data_description": {
           "label": "Par exemple F540 — la reference figurant sur votre boite ou dans votre compte. La Boks ne l'expose pas en Bluetooth (sa characteristic Serial Number renvoie sa propre adresse MAC), elle doit donc etre saisie. L'appareil s'appellera alors « Boks F540 » : indispensable des que vous gerez plusieurs boites, qui sinon porteraient toutes le meme nom.",
           "keepalive": "La Boks ferme la connexion apres environ 30 s de silence. Augmenter cette valeur reduit les echanges (et donc la consommation) quand le lien est maintenu, mais rapproche du seuil de coupure : au-dela, le lien tombe et se reconnecte en boucle, ce qui consomme davantage.",
           "reconnect_max": "Plafond du delai qui double a chaque echec. Une valeur elevee menage les piles quand la Boks est hors de portee ; une valeur basse raccourcit le retour en ligne.",
-          "open_code": "Le code lui-meme (6 caracteres sur l'alphabet 0123456789AB), ou une reference vers secrets.yaml sous la forme : !secret boks_code1 — recommande, le code reste alors dans le fichier prevu pour les secrets. Renseigner ce champ fait apparaitre un bouton Ouvrir : quiconque a acces a Home Assistant pourra alors ouvrir la boite. Laisser vide garde l'integration strictement en lecture. Utilisez un code permanent (code maitre ou code fixe) : un code a usage unique ne fonctionnerait qu'une fois."
+          "open_code": "Le code lui-meme (6 caracteres sur l'alphabet 0123456789AB), ou une reference vers secrets.yaml sous la forme : !secret boks_code1 — recommande, le code reste alors dans le fichier prevu pour les secrets. Renseigner ce champ fait apparaitre un bouton Ouvrir : quiconque a acces a Home Assistant pourra alors ouvrir la boite. Laisser vide garde l'integration strictement en lecture. Utilisez un code permanent (code maitre ou code fixe) : un code a usage unique ne fonctionnerait qu'une fois.",
+          "refresh_interval": "Toutes les N minutes, une connexion breve relit l'etat, la batterie et l'historique (dernieres ouvertures VIGIK / code), meme lien coupe. 0 desactive. ATTENTION : lire l'historique DRAINE le journal de la boite (qui sert de backlog au dongle officiel hors ligne) — un drain periodique risque de faire perdre des ouvertures a votre historique cloud officiel. N'activez qu'en connaissance de cause."
         }
       }
     },

@@ -25,6 +25,25 @@ OPCODE_TEST_BATTERY: Final = 8
 OPCODE_NOTIFY_DOOR_STATUS: Final = 132
 OPCODE_ANSWER_DOOR_STATUS: Final = 133
 
+# --- Historique (lecture seule) --------------------------------------------
+# La boîte tient un journal d'événements, lisible SANS authentification :
+# REQUEST_LOGS/GET_LOGS_COUNT ont un payload vide (pas de Config Key). Elle
+# streame ses événements du plus ancien au plus récent, clos par LOG_END_HISTORY.
+# Chaque événement porte un `age` = uint24 big-endian en secondes (pas de RTC) ;
+# on en dérive une date ≈ maintenant − age. Cf. docs/02-protocole-ble.md.
+OPCODE_GET_LOGS_COUNT: Final = 7
+OPCODE_REQUEST_LOGS: Final = 3
+OPCODE_NOTIFY_LOGS_COUNT: Final = 121
+OPCODE_LOG_CODE_KEY_VALID: Final = 135  # ouverture par code au clavier
+OPCODE_LOG_DOOR_CLOSE: Final = 144
+OPCODE_LOG_DOOR_OPEN: Final = 145
+OPCODE_LOG_END_HISTORY: Final = 146
+OPCODE_LOG_NFC_OPENING: Final = 161     # ouverture par badge NFC (VIGIK ou Mifare)
+#: Ensemble des opcodes émis par la boîte pendant un flux d'historique.
+HISTORY_EVENT_OPCODES: Final = frozenset(range(134, 163)) | {OPCODE_NOTIFY_LOGS_COUNT}
+#: `tagType` d'un événement NFC : 0x01 = LaPosteNfc (VIGIK), 0x03 = Mifare associé.
+NFC_TAGTYPE_VIGIK: Final = 0x01
+
 # --- Ouverture à distance --------------------------------------------------
 # Contrairement au reste, ouvrir exige un secret. Il n'y a cependant AUCUN
 # handshake chiffré sur le lien Boks : la commande transporte simplement un
@@ -53,15 +72,21 @@ PIN_LENGTH: Final = 6
 #: établir la connexion.
 OPEN_TIMEOUT: Final = 30.0
 
-# Périmètre volontairement restreint. L'intégration lit l'état de la boîte
-# et, si — et seulement si — l'utilisateur a configuré un code, sait ouvrir la
-# porte. Rien d'autre : aucune gestion de codes (16-19), aucune modification
-# de configuration (22), aucun provisioning (32-33). Ces opérations exigent la
-# Config Key / Master Key du propriétaire et sont, pour certaines,
-# irréversibles — le constructeur de trames refuse leurs opcodes par
-# construction, pas par convention.
+# Périmètre volontairement restreint. L'intégration lit l'état de la boîte,
+# lit son historique (opérations de LECTURE), et — si l'utilisateur a configuré
+# un code — sait ouvrir la porte. Rien d'autre : aucune gestion de codes
+# (16-19), aucune modification de configuration (22), aucun provisioning
+# (32-33). Ces opérations exigent la Config Key / Master Key du propriétaire et
+# sont, pour certaines, irréversibles — le constructeur de trames refuse leurs
+# opcodes par construction, pas par convention.
 ALLOWED_TX_OPCODES: Final = frozenset(
-    {OPCODE_ASK_DOOR_STATUS, OPCODE_TEST_BATTERY, OPCODE_OPEN_DOOR}
+    {
+        OPCODE_ASK_DOOR_STATUS,
+        OPCODE_TEST_BATTERY,
+        OPCODE_OPEN_DOOR,
+        OPCODE_GET_LOGS_COUNT,
+        OPCODE_REQUEST_LOGS,
+    }
 )
 
 # --- Liaison ---------------------------------------------------------------
@@ -99,6 +124,19 @@ BATTERY_TRANSIENT_DROP: Final = 10
 # --- Options (réglables depuis l'interface, sans redémarrage) ---------------
 CONF_KEEPALIVE: Final = "keepalive"
 CONF_RECONNECT_MAX: Final = "reconnect_max"
+#: Intervalle (minutes) d'un rafraîchissement périodique : une connexion brève
+#: qui relit état + batterie + historique, même quand le lien n'est pas
+#: maintenu. 0 = désactivé.
+#:
+#: ⚠️ Défaut **0** volontairement : lire l'historique **draine** le journal de
+#: la boîte (curseur persistant), et ce journal sert de **backlog au BoksLINK
+#: officiel** quand il est hors ligne. Un drain périodique local risquerait de
+#: lui **voler des événements** → ouvertures manquantes dans l'historique cloud
+#: officiel. À n'activer qu'en connaissance de cause.
+CONF_REFRESH_INTERVAL: Final = "refresh_interval"
+REFRESH_INTERVAL_DEFAULT: Final = 0
+REFRESH_INTERVAL_MIN: Final = 0
+REFRESH_INTERVAL_MAX: Final = 1440
 
 #: Le watchdog applicatif de la Boks ferme la connexion vers 30 s de silence.
 #: On garde une marge : au-delà, le lien tombe entre deux keepalives et se

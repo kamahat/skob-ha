@@ -10,8 +10,13 @@ import logging
 
 from .const import (
     ALLOWED_TX_OPCODES,
+    NFC_TAGTYPE_VIGIK,
     OPCODE_ASK_DOOR_STATUS,
+    OPCODE_GET_LOGS_COUNT,
+    OPCODE_LOG_CODE_KEY_VALID,
+    OPCODE_LOG_NFC_OPENING,
     OPCODE_OPEN_DOOR,
+    OPCODE_REQUEST_LOGS,
     PIN_ALPHABET,
     PIN_LENGTH,
 )
@@ -31,6 +36,35 @@ def build_frame(opcode: int, payload: bytes = b"") -> bytes:
 
 #: Requête d'état de la porte — sert aussi de keepalive (cf. const.KEEPALIVE_INTERVAL).
 ASK_DOOR_STATUS_FRAME: bytes = build_frame(OPCODE_ASK_DOOR_STATUS)
+
+#: Lecture de l'historique (lecture seule, sans authentification).
+GET_LOGS_COUNT_FRAME: bytes = build_frame(OPCODE_GET_LOGS_COUNT)
+REQUEST_LOGS_FRAME: bytes = build_frame(OPCODE_REQUEST_LOGS)
+
+
+def history_event_age(opcode: int, payload: bytes) -> int | None:
+    """Âge (en secondes) d'un événement d'historique qui nous intéresse.
+
+    Renvoie l'âge pour une **ouverture VIGIK** (NFC, ``tagType`` = LaPosteNfc)
+    ou une **ouverture par code au clavier**, sinon ``None``. Chaque événement
+    commence par ``[age : 3 octets big-endian, secondes]`` — la boîte n'ayant
+    pas d'horloge, la date se dérive par ``maintenant − age``.
+
+    Formats (cf. docs/02) :
+    - ``161`` NFC : ``[age:3][tagType:1][uidLen:1][uid]`` — VIGIK si
+      ``tagType == 0x01``.
+    - ``135`` code clavier : ``[age:3][code…]``.
+    """
+    if len(payload) < 3:
+        return None
+    age = int.from_bytes(payload[:3], "big")
+    if opcode == OPCODE_LOG_NFC_OPENING:
+        if len(payload) >= 4 and payload[3] == NFC_TAGTYPE_VIGIK:
+            return age
+        return None
+    if opcode == OPCODE_LOG_CODE_KEY_VALID:
+        return age
+    return None
 
 
 def normalize_pin(pin: str) -> str:

@@ -28,6 +28,7 @@ from .const import (
     CONF_LABEL,
     CONF_OPEN_CODE,
     CONF_RECONNECT_MAX,
+    CONF_REFRESH_INTERVAL,
     DOMAIN,
     KEEPALIVE_INTERVAL,
     KEEPALIVE_MAX,
@@ -35,6 +36,9 @@ from .const import (
     RECONNECT_DELAY_MAX,
     RECONNECT_MAX_MAX,
     RECONNECT_MAX_MIN,
+    REFRESH_INTERVAL_DEFAULT,
+    REFRESH_INTERVAL_MAX,
+    REFRESH_INTERVAL_MIN,
     SERVICE_UUID,
 )
 from .protocol import normalize_pin
@@ -214,6 +218,20 @@ class BoksOptionsFlow(OptionsFlow):
                     ): selector.TextSelector(
                         selector.TextSelectorConfig(
                             type=selector.TextSelectorType.PASSWORD
+                        )
+                    ),
+                    vol.Required(
+                        CONF_REFRESH_INTERVAL,
+                        default=options.get(
+                            CONF_REFRESH_INTERVAL, REFRESH_INTERVAL_DEFAULT
+                        ),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=REFRESH_INTERVAL_MIN,
+                            max=REFRESH_INTERVAL_MAX,
+                            step=5,
+                            unit_of_measurement="min",
+                            mode=selector.NumberSelectorMode.BOX,
                         )
                     ),
                 }

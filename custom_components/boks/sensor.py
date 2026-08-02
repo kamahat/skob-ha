@@ -12,10 +12,43 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import PERCENTAGE, EntityCategory, SIGNAL_STRENGTH_DECIBELS_MILLIWATT
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 from .coordinator import BoksLink
 from .entity import BoksEntity
+
+
+class _RestoreIntoState(RestoreEntity):
+    """Restaure la dernière valeur connue dans l'état de la liaison.
+
+    Les valeurs vivent en mémoire et repartent vides après un redémarrage de
+    Home Assistant. Ce mixin réinjecte la dernière valeur persistée dans
+    ``BoksLink.state`` au démarrage — tant qu'aucune connexion n'a encore fourni
+    de valeur fraîche — pour que le tableau de bord ne soit pas vide en
+    attendant le prochain rafraîchissement.
+    """
+
+    #: Attribut de ``BoksState`` à restaurer et fonction de parsing.
+    _restore_attr: str = ""
+
+    def _restore_parse(self, raw: str):  # noqa: ANN001 - surchargé
+        return raw
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_state()
+        if last is None or last.state in (None, "unknown", "unavailable"):
+            return
+        if getattr(self._link.state, self._restore_attr) is not None:
+            return  # une valeur fraîche a déjà été obtenue
+        try:
+            value = self._restore_parse(last.state)
+        except (ValueError, TypeError):
+            return
+        if value is not None:
+            setattr(self._link.state, self._restore_attr, value)
 
 
 async def async_setup_entry(
@@ -35,16 +68,22 @@ async def async_setup_entry(
             BoksVersionSensor(link, "software", "Software"),
             BoksLastConnectedSensor(link),
             BoksAddressSensor(link),
+            BoksVigikOpenSensor(link),
+            BoksCodeOpenSensor(link),
         ]
     )
 
 
-class BoksBatterySensor(BoksEntity, SensorEntity):
+class BoksBatterySensor(BoksEntity, SensorEntity, _RestoreIntoState):
     """Niveau de batterie (poussé par la Boks, lu à la connexion)."""
 
     _attr_device_class = SensorDeviceClass.BATTERY
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _restore_attr = "battery"
+
+    def _restore_parse(self, raw: str) -> int:
+        return int(float(raw))
 
     def __init__(self, link: BoksLink) -> None:
         super().__init__(link, "battery")
@@ -106,7 +145,7 @@ class BoksVersionSensor(BoksEntity, SensorEntity):
         return getattr(self._link.state, self._key)
 
 
-class BoksLastConnectedSensor(BoksEntity, SensorEntity):
+class BoksLastConnectedSensor(BoksEntity, SensorEntity, _RestoreIntoState):
     """Horodatage du dernier lien GATT établi.
 
     Sert surtout quand la connexion n'est pas maintenue : il dit de quand
@@ -115,6 +154,10 @@ class BoksLastConnectedSensor(BoksEntity, SensorEntity):
 
     _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _restore_attr = "last_connected"
+
+    def _restore_parse(self, raw: str) -> datetime | None:
+        return dt_util.parse_datetime(raw)
 
     def __init__(self, link: BoksLink) -> None:
         super().__init__(link, "last_connected")
@@ -175,3 +218,48 @@ class BoksLabelSensor(BoksEntity, SensorEntity):
     @property
     def native_value(self) -> str | None:
         return self._link.label
+
+
+class _BoksOpeningSensor(BoksEntity, SensorEntity, _RestoreIntoState):
+    """Base des « dernière ouverture … » — horodatage tiré de l'historique.
+
+    Ces dates sont **approximatives** : la boîte n'a pas d'horloge et date ses
+    événements par un âge relatif (cf. docs/02). Elles sont rafraîchies à chaque
+    lecture d'historique (à la connexion, et au rafraîchissement périodique).
+    """
+
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def _restore_parse(self, raw: str) -> datetime | None:
+        return dt_util.parse_datetime(raw)
+
+    @property
+    def available(self) -> bool:
+        return getattr(self._link.state, self._restore_attr) is not None
+
+    @property
+    def native_value(self) -> datetime | None:
+        return getattr(self._link.state, self._restore_attr)
+
+
+class BoksVigikOpenSensor(_BoksOpeningSensor):
+    """Dernière ouverture par badge VIGIK (NFC La Poste)."""
+
+    _attr_icon = "mdi:mailbox-open"
+    _restore_attr = "last_vigik_open"
+
+    def __init__(self, link: BoksLink) -> None:
+        super().__init__(link, "last_vigik_open")
+        self._attr_name = "Dernière ouverture VIGIK"
+
+
+class BoksCodeOpenSensor(_BoksOpeningSensor):
+    """Dernière ouverture par code permanent saisi au clavier."""
+
+    _attr_icon = "mdi:dialpad"
+    _restore_attr = "last_code_open"
+
+    def __init__(self, link: BoksLink) -> None:
+        super().__init__(link, "last_code_open")
+        self._attr_name = "Dernière ouverture code"

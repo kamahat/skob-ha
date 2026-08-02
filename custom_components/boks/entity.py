@@ -31,6 +31,7 @@ class BoksEntity(Entity):
 
     async def async_added_to_hass(self) -> None:
         """S'abonne aux mises à jour poussées par la liaison."""
+        await super().async_added_to_hass()
         self.async_on_remove(
             self._link.async_add_listener(self.async_write_ha_state)
         )

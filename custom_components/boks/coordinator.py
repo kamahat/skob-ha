@@ -15,7 +15,7 @@ import asyncio
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from bleak.backends.characteristic import BleakGATTCharacteristic
 from bleak.exc import BleakError
@@ -31,10 +31,14 @@ from .const import (
     BATTERY_TRANSIENT_DROP,
     BATTERY_UUID,
     FIRMWARE_UUID,
+    HISTORY_EVENT_OPCODES,
     KEEPALIVE_INTERVAL,
     NOTIFY_UUID,
     OPCODE_ANSWER_DOOR_STATUS,
     OPCODE_INVALID_OPEN_CODE,
+    OPCODE_LOG_CODE_KEY_VALID,
+    OPCODE_LOG_END_HISTORY,
+    OPCODE_LOG_NFC_OPENING,
     OPCODE_NOTIFY_DOOR_STATUS,
     OPCODE_VALID_OPEN_CODE,
     OPEN_TIMEOUT,
@@ -45,8 +49,11 @@ from .const import (
 )
 from .protocol import (
     ASK_DOOR_STATUS_FRAME,
+    GET_LOGS_COUNT_FRAME,
+    REQUEST_LOGS_FRAME,
     build_open_door_frame,
     door_is_open,
+    history_event_age,
     parse_frame,
 )
 
@@ -73,6 +80,10 @@ class BoksState:
     #: Plus haut niveau observé depuis la mise en place du jeu de piles courant.
     #: Sert de référence en mode régulé, où seul le décrochage est lisible.
     battery_plateau: int | None = None
+    #: Dérivées de l'historique de la boîte (âge relatif → date). Approximatives
+    #: (la boîte n'a pas d'horloge) et rafraîchies à chaque lecture d'historique.
+    last_vigik_open: datetime | None = None
+    last_code_open: datetime | None = None
 
 
 class BoksLink:
@@ -86,6 +97,7 @@ class BoksLink:
         reconnect_max: float = RECONNECT_DELAY_MAX,
         open_code: str | None = None,
         label: str | None = None,
+        refresh_interval: int = 0,
     ) -> None:
         self.hass = hass
         self.address = address
@@ -123,6 +135,13 @@ class BoksLink:
         #: Une chute franche est-elle en attente de confirmation par la lecture
         #: suivante ? (cf. BATTERY_TRANSIENT_DROP et _accept_battery.)
         self._battery_sagging = False
+        #: Intervalle (minutes) du rafraîchissement périodique ; 0 = désactivé.
+        self.refresh_interval = refresh_interval
+        self._refresh_runner: asyncio.Task | None = None
+        self._stop_refresh = asyncio.Event()
+        #: Collecteur d'événements pendant une lecture d'historique (None sinon).
+        self._history: list[tuple[int, bytes]] | None = None
+        self._history_done: asyncio.Event | None = None
 
     @property
     def hold(self) -> bool:
@@ -247,6 +266,67 @@ class BoksLink:
             {"address": self.address, "connectable": False},
             bluetooth.BluetoothScanningMode.ACTIVE,
         )
+        if self.refresh_interval > 0:
+            self._stop_refresh.clear()
+            self._refresh_runner = self.hass.async_create_background_task(
+                self._async_refresh_loop(), name=f"boks-refresh[{self.address}]"
+            )
+
+    async def _async_refresh_loop(self) -> None:
+        """Rafraîchissement périodique : connexion brève lien coupé.
+
+        Toutes les ``refresh_interval`` minutes, si le lien n'est pas déjà
+        maintenu, établit une session courte pour relire état, batterie et
+        historique, puis se déconnecte. C'est le compromis « status et dates
+        récents sans tenir le lien » — désactivé quand l'intervalle est 0.
+        """
+        while not self._stop_refresh.is_set():
+            try:
+                await asyncio.wait_for(
+                    self._stop_refresh.wait(), timeout=self.refresh_interval * 60
+                )
+                return  # arrêt demandé
+            except TimeoutError:
+                pass
+            if self._hold:
+                continue  # le lien maintenu rafraîchit déjà
+            try:
+                await self._async_refresh_once()
+            except Exception as err:  # noqa: BLE001 - opportuniste, on réessaiera
+                _LOGGER.debug("rafraîchissement périodique échoué: %s", err)
+
+    async def _async_refresh_once(self) -> None:
+        """Session courte de lecture : état + batterie + porte + historique."""
+        device = bluetooth.async_ble_device_from_address(
+            self.hass, self.address, connectable=True
+        )
+        if device is None:
+            return
+        client: BleakClientWithServiceCache = await establish_connection(
+            BleakClientWithServiceCache,
+            device,
+            self.address,
+            self._on_disconnected,
+            use_services_cache=False,
+        )
+        self.state.last_connected = datetime.now(timezone.utc)
+        self._notify_listeners()
+        try:
+            await self._async_read_static(client)
+            await client.start_notify(NOTIFY_UUID, self._on_app_notify)
+            # Un ASK_DOOR_STATUS pour rafraîchir la porte, puis l'historique.
+            await client.write_gatt_char(WRITE_UUID, ASK_DOOR_STATUS_FRAME, response=True)
+            await asyncio.sleep(1)
+            await self._async_read_history(client)
+        finally:
+            try:
+                await client.clear_cache()
+            except Exception as err:  # noqa: BLE001 - purement opportuniste
+                _LOGGER.debug("purge du cache GATT impossible: %s", err)
+            try:
+                await client.disconnect()
+            except (BleakError, EOFError) as err:
+                _LOGGER.debug("déconnexion après rafraîchissement: %s", err)
 
     async def async_set_hold(self, hold: bool) -> None:
         """Établit ou libère le lien GATT permanent."""
@@ -365,6 +445,14 @@ class BoksLink:
         if self._unregister_adv is not None:
             self._unregister_adv()
             self._unregister_adv = None
+        self._stop_refresh.set()
+        if self._refresh_runner is not None:
+            self._refresh_runner.cancel()
+            try:
+                await self._refresh_runner
+            except asyncio.CancelledError:
+                pass
+            self._refresh_runner = None
         await self._async_cancel_runner()
         await self._async_disconnect()
 
@@ -436,6 +524,15 @@ class BoksLink:
                 _LOGGER.debug("notify batterie indisponible: %s", err)
             self._notify_listeners()
 
+            # Une lecture d'historique par établissement de lien : met à jour les
+            # dates de dernière ouverture VIGIK / code au clavier. ATTENTION :
+            # REQUEST_LOGS *draine* le journal (curseur persistant côté boîte) —
+            # cf. _async_read_history.
+            try:
+                await self._async_read_history(client)
+            except (BleakError, EOFError) as err:
+                _LOGGER.debug("lecture historique impossible: %s", err)
+
             while not self._stop.is_set() and client.is_connected:
                 # Réarme le watchdog de la Boks et rafraîchit l'état de la porte.
                 await client.write_gatt_char(
@@ -481,6 +578,95 @@ class BoksLink:
             if raw:
                 self._set_battery(bytes(raw)[0])
 
+    async def _async_read_history(
+        self, client: BleakClientWithServiceCache
+    ) -> None:
+        """Draine le journal d'événements et en tire les dernières ouvertures.
+
+        Non authentifié : ``GET_LOGS_COUNT`` puis ``REQUEST_LOGS`` (payloads
+        vides). La boîte streame ses événements via les notifications (routées
+        dans ``_on_app_notify``) jusqu'à ``LOG_END_HISTORY``.
+
+        ⚠️ **Sémantique de drain.** ``REQUEST_LOGS`` **consomme** un curseur
+        **persistant côté boîte** : chaque lecture ne renvoie que les événements
+        **non encore lus**, puis les marque lus — une relecture ultérieure
+        (même après reconnexion) renvoie donc *rien* tant qu'aucun nouvel
+        événement n'est survenu. On **accumule** donc : chaque drain ne fait
+        qu'**avancer** les dates VIGIK / code (jamais régresser), et la
+        persistance (`RestoreEntity`) conserve le dernier connu.
+
+        Les dates dérivent d'un âge relatif (la boîte n'a pas d'horloge), donc
+        approximatives. Suppose les notifications déjà activées par l'appelant.
+        """
+        self._history = []
+        self._history_done = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        try:
+            await client.write_gatt_char(WRITE_UUID, GET_LOGS_COUNT_FRAME, response=True)
+            await asyncio.sleep(0.5)  # laisse arriver NOTIFY_LOGS_COUNT
+            # REQUEST_LOGS fait avancer le curseur ; on relance tant que le flux
+            # progresse. Borné par un plafond de temps ET un nombre de tours
+            # « à vide » consécutifs — la latence via un proxy ESPHome dépasse
+            # largement une seule fenêtre courte.
+            deadline = loop.time() + 25.0
+            idle = 0
+            last = -1
+            while loop.time() < deadline and not self._history_done.is_set():
+                await client.write_gatt_char(
+                    WRITE_UUID, REQUEST_LOGS_FRAME, response=True
+                )
+                try:
+                    await asyncio.wait_for(self._history_done.wait(), timeout=2.0)
+                except TimeoutError:
+                    pass
+                count = len(self._history)
+                idle = idle + 1 if count == last else 0
+                last = count
+                if idle >= 3:
+                    break  # trois tours sans nouvel événement
+            events = self._history
+        finally:
+            self._history = None
+            self._history_done = None
+        _LOGGER.debug("historique: %d trames collectées (drain)", len(events))
+
+        now = datetime.now(timezone.utc)
+        latest_vigik: int | None = None  # plus petit âge = plus récent
+        latest_code: int | None = None
+        for opcode, payload in events:
+            age = history_event_age(opcode, payload)
+            if age is None:
+                continue
+            if opcode == OPCODE_LOG_NFC_OPENING:  # âge non nul ⇒ tagType = VIGIK
+                if latest_vigik is None or age < latest_vigik:
+                    latest_vigik = age
+            elif opcode == OPCODE_LOG_CODE_KEY_VALID:
+                if latest_code is None or age < latest_code:
+                    latest_code = age
+
+        # Accumulation : on n'avance une date que si le drain apporte plus récent
+        # (le drain ne peut donner que des événements postérieurs au dernier lu,
+        # mais on reste robuste vis-à-vis de la valeur persistée).
+        changed = False
+        if latest_vigik is not None:
+            date = now - timedelta(seconds=latest_vigik)
+            if self.state.last_vigik_open is None or date > self.state.last_vigik_open:
+                self.state.last_vigik_open = date
+                changed = True
+        if latest_code is not None:
+            date = now - timedelta(seconds=latest_code)
+            if self.state.last_code_open is None or date > self.state.last_code_open:
+                self.state.last_code_open = date
+                changed = True
+        if changed:
+            _LOGGER.debug(
+                "historique: %d événements, VIGIK=%s code=%s",
+                len(events),
+                self.state.last_vigik_open,
+                self.state.last_code_open,
+            )
+            self._notify_listeners()
+
     @callback
     def _on_app_notify(self, _char: BleakGATTCharacteristic, data: bytearray) -> None:
         """Notification applicative : état de la porte poussé par la Boks."""
@@ -491,6 +677,12 @@ class BoksLink:
         if opcode in (OPCODE_VALID_OPEN_CODE, OPCODE_INVALID_OPEN_CODE):
             if self._open_result is not None and not self._open_result.done():
                 self._open_result.set_result(opcode == OPCODE_VALID_OPEN_CODE)
+            return
+        # Pendant une lecture d'historique, la boîte streame ses événements ici.
+        if self._history is not None and opcode in HISTORY_EVENT_OPCODES:
+            self._history.append((opcode, payload))
+            if opcode == OPCODE_LOG_END_HISTORY and self._history_done is not None:
+                self._history_done.set()
             return
         if opcode not in (OPCODE_NOTIFY_DOOR_STATUS, OPCODE_ANSWER_DOOR_STATUS):
             _LOGGER.debug("opcode %s ignoré (%s)", opcode, bytes(data).hex())
