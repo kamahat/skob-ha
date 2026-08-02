@@ -29,7 +29,7 @@ remain under their original MIT terms.
 ## What was changed relative to upstream
 
 One source modification needed to build on Windows, one build-default change,
-one dashboard feature, and one file rename:
+one dashboard feature, one file rename, and one connection-power change:
 
 - `components/api_proto/CMakeLists.txt` — the nanopb generator was invoked as
   hard-coded `python3`, which does not exist as an executable on Windows (it
@@ -60,6 +60,23 @@ one dashboard feature, and one file rename:
   is reached over HTTP, since the Web Bluetooth transport cannot carry a
   ~1.3 MB image. Offered upstream as
   [`feat/dashboard-firmware-upload`](https://github.com/kamahat/nimble-ble-proxy-esphome/tree/feat/dashboard-firmware-upload).
+
+- `include/proxy_config.h` + `components/ble_backend/connection.cpp` — the
+  outgoing central connection now calls `NimBLEClient::setConnectionParams()`
+  with an explicit interval/latency/timeout instead of leaving it uncalled.
+  Upstream's default (via `BLE_GAP_INITIAL_CONN_ITVL_{MIN,MAX}`) is a 30-50 ms
+  interval with zero slave latency: the peripheral must wake and respond on
+  every connection event, 20-33 times a second, for as long as the link is
+  held — fine for the upstream project's general low-latency use case, costly
+  for a battery-powered peripheral held connected long-term. Measured effect
+  on our mailbox: a visible "Bluetooth active" LED that stayed lit continuously
+  (unlike the vendor's own dongle, whose connection the LED does not track the
+  same way) and a 58%→28% battery drop over 6 days while a permanent link was
+  held. Widened to 200-400 ms / latency 4 / 6000 ms supervision timeout — a
+  ~10-30× reduction in radio duty cycle, comfortably under the ~30 s
+  application-level watchdog a held link still needs to satisfy with periodic
+  writes. See `proxy_config.h` for the exact values and the BLE-spec unit
+  conversions.
 
 - `README.md` → `README-DETAIL.md` — **renamed, contents untouched.** The
   upstream author's document is a technical reference, not a build guide, and

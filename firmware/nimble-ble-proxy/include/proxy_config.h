@@ -13,7 +13,7 @@
 
 namespace proxy {
 
-inline constexpr const char *VERSION = "0.1.0";
+inline constexpr const char *VERSION = "0.2.0";
 
 // Compile-time default hostname. Runtime value is exposed via
 // `hostname()` below — it may be overridden by an NVS entry loaded at
@@ -93,6 +93,26 @@ inline constexpr size_t GATT_DISCOVERY_CHUNK_BYTES = 1360;
 // Per-connection timeouts.
 inline constexpr uint32_t CONNECT_TIMEOUT_MS = 8000;
 inline constexpr uint32_t DISCONNECT_TIMEOUT_MS = 10000;
+
+// BLE link-layer connection parameters, applied to every outgoing central
+// connection via NimBLEClient::setConnectionParams(). Left uncalled, NimBLE
+// falls back to BLE_GAP_INITIAL_CONN_ITVL_{MIN,MAX} = 30/50 ms with zero slave
+// latency: the peripheral's radio must wake and respond on *every* connection
+// event, 20-33 times per second, for as long as the link is held. On a
+// battery-powered peripheral (observed: a mailbox lock, 58%→28% battery drop
+// in 6 days while a permanent link was held) that duty cycle is the dominant
+// cost — far more than the periodic application-level write a persistent
+// central still needs to send to satisfy the peripheral's own watchdog.
+//
+// Units per Bluetooth Core spec: interval in 1.25 ms steps, latency in
+// skippable connection events, timeout in 10 ms steps (must exceed
+// (1+latency) * maxInterval * 2 = (1+4) * 400ms * 2 = 4000 ms — the 6000 ms
+// below gives 2000 ms of margin, and stays well under any peripheral
+// application watchdog measured in seconds).
+inline constexpr uint16_t CONN_INTERVAL_MIN = 160;    // 200 ms
+inline constexpr uint16_t CONN_INTERVAL_MAX = 320;    // 400 ms
+inline constexpr uint16_t CONN_LATENCY = 4;           // skip up to 4 events when idle
+inline constexpr uint16_t CONN_SUPERVISION_TIMEOUT = 600;  // 6000 ms
 
 // API frame limits — matches ESPHome's MAX_MESSAGE_SIZE for plaintext.
 inline constexpr size_t MAX_MESSAGE_SIZE = 2048;

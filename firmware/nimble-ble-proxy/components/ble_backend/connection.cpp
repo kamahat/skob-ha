@@ -227,6 +227,11 @@ bool connect(uint64_t address, uint8_t address_type, ConnectCallback cb) {
     s->client->setClientCallbacks(&g_client_cb, /*deleteCallbacks=*/false);
     // NimBLE-Cpp setConnectTimeout takes milliseconds (default 30000).
     s->client->setConnectTimeout(proxy::CONNECT_TIMEOUT_MS);
+    // Loosen the connection interval up front (see proxy_config.h) instead of
+    // NimBLE's tight 30-50 ms / zero-latency default — the peripheral's radio
+    // otherwise wakes 20-33x/second for as long as the link is held.
+    s->client->setConnectionParams(proxy::CONN_INTERVAL_MIN, proxy::CONN_INTERVAL_MAX,
+                                    proxy::CONN_LATENCY, proxy::CONN_SUPERVISION_TIMEOUT);
   }
   NimBLEClient *client = s->client;
   xSemaphoreGive(g_mutex);
