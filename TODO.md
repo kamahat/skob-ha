@@ -83,10 +83,17 @@ capture. Nothing should be implemented before the frame layout is confirmed.
   [the troubleshooting section](README.md#gatt-cache-and-the-error-2-failure-mode))
   by clearing the GATT cache each session. The real fix belongs in the proxy
   firmware; a patch is prepared for upstream.
-- **Connection-interval negotiation.** The firmware does not call
-  `updateConnParams`. Negotiating a longer interval is the main lever left on
-  battery drain while the link is held — more effective than tuning the
-  keepalive.
+- ~~**Connection-interval negotiation.**~~ **Done in firmware v0.2.0**
+  (`setConnectionParams`, 200-400 ms / latency 4, up from NimBLE's 30-50 ms /
+  zero-latency default) — a measured ~10-30× cut in the mailbox's radio duty
+  cycle while a link is held. **What it did not do:** fix the mailbox's
+  Bluetooth LED staying lit while held (tested — the LED tracks link
+  *presence*, not traffic). Why the vendor's own dongle avoids lighting it
+  while holding its own link is still open; a link-layer pairing/bonding this
+  proxy never initiates is the leading unconfirmed theory. Not pursued
+  further yet — untested peripheral behaviour on an access-control device
+  warrants care, ideally a way to observe the mailbox's reaction before
+  attempting it live. See [README § Holding the link](README.md#holding-the-link).
 - **Dependency pinning.** Track `bleak-esphome` / `aioesphomeapi` versions that
   are known-good against this box, so a Home Assistant update cannot silently
   regress the link.

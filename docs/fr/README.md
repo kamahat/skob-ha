@@ -21,6 +21,8 @@ où l'état de la porte change** — aucun polling.
 | Lien BLE | `binary_sensor` (`connectivity`) | diagnostic |
 | Dernière connexion | `sensor` (horodatage) | diagnostic — dit de quand datent les valeurs ci-dessus |
 | Adresse BLE | `sensor` | diagnostic |
+| Dernière ouverture VIGIK | `sensor` (horodatage) | diagnostic — voir [Historique des ouvertures](#historique-des-ouvertures) |
+| Dernière ouverture code | `sensor` (horodatage) | diagnostic — voir [Historique des ouvertures](#historique-des-ouvertures) |
 | RSSI | `sensor` (dBm) | diagnostic, désactivé par défaut |
 | Firmware / Software | `sensor` | diagnostic, désactivés par défaut |
 
@@ -92,23 +94,64 @@ et il vous appartient :
 - **Allumé** — le lien GATT est tenu en permanence. Les changements d'état sont
   poussés à l'instant où ils se produisent, mais la boîte garde sa radio
   éveillée : sur un appareil à piles, cela se paie. Mesuré sur la nôtre :
-  **58 % → 28 % en six jours**, piles retrouvées à plat. La diode Bluetooth de
-  la boîte reste allumée pendant tout ce temps — c'est un moyen commode de
-  vérifier.
-- **Éteint** (par défaut) — aucune connexion. Les valeurs déjà connues restent
-  affichées, et *Dernière connexion* dit de quand elles datent. La présence
-  continue d'être suivie par les advertisements, qui ne coûtent rien à la boîte.
+  **58 % → 28 % en six jours**, piles retrouvées à plat.
+- **Éteint** (par défaut, **recommandé**) — aucune connexion entre deux
+  rafraîchissements. Les valeurs déjà connues restent affichées, et *Dernière
+  connexion* dit de quand elles datent. La présence continue d'être suivie par
+  les advertisements, qui ne coûtent rien à la boîte.
 
-Deux réglages sont accessibles via **Configurer** sur l'entrée d'intégration,
+### La diode Bluetooth
+
+La diode Bluetooth de la boîte s'allume tant qu'un *quelconque* central tient
+un lien GATT — y compris celui de cette intégration — mais **pas**, chez nous,
+quand c'est le pont officiel du fabricant qui tient le lien. Cet écart nous a
+lancés sur une piste :
+
+- **Testé et confirmé :** sans réglage explicite, le firmware du proxy tenait
+  son lien à l'intervalle par défaut de NimBLE — **30-50 ms, latence nulle** —
+  ce qui obligeait la radio de la boîte à se réveiller et répondre 20 à 33 fois
+  **par seconde**, tant que le lien restait ouvert. Depuis la
+  [v0.2.0](../../firmware/nimble-ble-proxy/NOTICE.md), le proxy négocie un
+  intervalle bien plus lâche — **200-400 ms avec latence** —, soit une
+  réduction mesurée d'un facteur **~10 à 30** de ce duty cycle radio. Un gain
+  qui vaut la peine, indépendamment de la suite.
+- **Testé et infirmé :** ce changement seul **n'éteint pas** la diode. Tenir le
+  lien au nouvel intervalle, bien plus doux, la laisse quand même allumée en
+  continu, exactement comme avant. La diode suit la *présence* du lien, pas son
+  trafic — l'écart réel avec le dongle du fabricant reste ouvert (un
+  appariement Bluetooth (bonding) que le dongle effectuerait et que ce proxy
+  n'effectue pas est l'hypothèse non confirmée la plus probable).
+
+Dans ces conditions, **tenir le lien est aujourd'hui le seul moyen d'obtenir
+une diode allumée en continu** — aucun réglage ne donne à la fois une connexion
+permanente et une diode éteinte. Si la diode vous importe, laissez
+**Connexion maintenue** éteint et utilisez plutôt l'intervalle de
+rafraîchissement ci-dessous : la diode ne clignote alors que le temps de
+chaque rafraîchissement, quelques secondes.
+
+### Réglages
+
+Trois réglages sont accessibles via **Configurer** sur l'entrée d'intégration,
 et appliqués sans redémarrer Home Assistant :
 
 | Réglage | Plage | Rôle |
 |---|---|---|
-| Intervalle de keepalive | 5–28 s | Principal levier de consommation quand le lien est tenu |
+| Intervalle de keepalive | 5–28 s | Principal levier de consommation *quand le lien est tenu* |
 | Plafond de reconnexion | 30–900 s | Backoff quand la boîte est hors de portée |
+| Intervalle de rafraîchissement | 0–1440 min | Connexion brève périodique, lien **non** tenu |
 
-Le keepalive est borné à 28 s volontairement : la boîte ferme la connexion au
-bout d'environ **30 s** de silence. Au-delà, le lien tombe entre deux
+**L'intervalle de rafraîchissement** est ce qui garde l'état exploitable avec
+*Connexion maintenue* éteint : une connexion brève toutes les N minutes relit
+l'état de la porte, la batterie, et l'[historique des ouvertures](#historique-des-ouvertures)
+(voir la réserve associée), puis se déconnecte — la radio de la boîte, et la
+diode, ne sont actives que le temps que ça prend, quelques secondes. `0`
+désactive : l'état ne se met alors à jour qu'à l'appui sur **Ouvrir**. C'est
+aussi là que le correctif d'intervalle de connexion profite même en connexion
+brève — chaque rafraîchissement, comme chaque session tenue, tourne désormais
+au nouvel intervalle plus doux.
+
+Le keepalive est borné à 28 s volontairement : la boîte ferme un lien *tenu*
+au bout d'environ **30 s** de silence. Au-delà, le lien tombe entre deux
 keepalives et se reconnecte en boucle — ce qui coûte *plus* que de le tenir.
 
 > Recharger l'entrée ne recharge **pas** le code Python de l'intégration, qui
@@ -189,6 +232,35 @@ pratique, puisque ne pas le tenir est à la fois le défaut et le réglage
 L'appui n'est réputé réussi qu'une fois la réponse `VALID_OPEN_CODE` reçue. Une
 écriture GATT ne prouve rien à elle seule : un code refusé et une commande non
 entendue se ressembleraient exactement.
+
+## Historique des ouvertures
+
+Deux capteurs de diagnostic rapportent la plus récente ouverture par chacune
+des méthodes propres à la boîte :
+
+- **Dernière ouverture VIGIK** — un badge NFC La Poste (`tagType` `0x01` dans
+  le journal d'événements de la boîte).
+- **Dernière ouverture code** — un code permanent saisi au clavier physique.
+
+Les deux dates sont **approximatives** : la boîte n'a pas d'horloge, chaque
+événement journalisé porte un âge en secondes relatif à *maintenant*, pas un
+horodatage. Lire le journal juste après que le lien a été brièvement tenu
+ailleurs peut aussi manquer l'événement le plus récent.
+
+> **À lire avant d'activer.** Le journal d'événements de la boîte est un
+> historique **unique, partagé, consommable** — le lire (`REQUEST_LOGS`) le
+> **draine** : les événements déjà lus en disparaissent définitivement, pour
+> tout lecteur. C'est ce même journal que le pont officiel du fabricant
+> rattrape à sa reconnexion après une coupure. Le lire ici sur un intervalle
+> régulier peut donc **voler des événements à l'historique de l'app
+> officielle** avant même que le dongle ne les voie.
+>
+> Ces capteurs sont donc pilotés entièrement par l'**intervalle de
+> rafraîchissement** (voir [Maintenir le lien](#maintenir-le-lien)) et sont
+> **désactivés par défaut** — `0` signifie que le journal n'est jamais lu.
+> N'activez cela que si vous acceptez que les lectures de cette intégration
+> entrent en concurrence avec celles du dongle du fabricant, ou si vous savez
+> que le dongle est hors ligne.
 
 ## Batterie : alcalines ou cellules régulées
 

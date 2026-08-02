@@ -89,10 +89,19 @@ sur le chemin `bleak` / `bleak-esphome` / `habluetooth`.
   [section de dépannage](README.md#dépannage)) en
   vidant le cache GATT à chaque session. Le vrai correctif est dans le firmware
   du proxy ; un patch est préparé pour l'amont.
-- **Négociation de l'intervalle de connexion.** Le firmware n'appelle pas
-  `updateConnParams`. Négocier un intervalle plus long est le principal levier
-  restant sur la consommation quand le lien est maintenu — plus efficace que le
-  réglage du keepalive.
+- ~~**Négociation de l'intervalle de connexion.**~~ **Fait en firmware v0.2.0**
+  (`setConnectionParams`, 200-400 ms / latence 4, contre le défaut NimBLE de
+  30-50 ms / latence nulle) — réduction mesurée d'un facteur ~10 à 30 du duty
+  cycle radio de la boîte quand un lien est tenu. **Ce que ça n'a pas réglé :**
+  la diode Bluetooth de la boîte reste allumée en continu quand le lien est
+  tenu (testé — la diode suit la *présence* du lien, pas son trafic).
+  Pourquoi le dongle du fabricant évite d'allumer la diode en tenant son
+  propre lien reste ouvert ; un appariement (bonding) au niveau liaison que ce
+  proxy n'initie jamais est l'hypothèse non confirmée la plus probable. Pas
+  creusé davantage pour l'instant — un comportement de la boîte non testé sur
+  un appareil de contrôle d'accès mérite de la prudence, idéalement un moyen
+  d'observer sa réaction avant de le tenter en direct. Voir
+  [README § Maintenir le lien](README.md#maintenir-le-lien).
 - **Épinglage des dépendances.** Suivre les versions de `bleak-esphome` /
   `aioesphomeapi` connues comme bonnes contre cette boîte, pour qu'une mise à
   jour de Home Assistant ne régresse pas le lien en silence.

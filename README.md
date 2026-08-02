@@ -20,6 +20,8 @@ moment the door state changes** — there is no polling.
 | BLE link | `binary_sensor` (`connectivity`) | diagnostic |
 | Last connected | `sensor` (timestamp) | diagnostic — how fresh the values above are |
 | BLE address | `sensor` | diagnostic |
+| Last VIGIK opening | `sensor` (timestamp) | diagnostic — see [Opening history](#opening-history) |
+| Last code opening | `sensor` (timestamp) | diagnostic — see [Opening history](#opening-history) |
 | RSSI | `sensor` (dBm) | diagnostic, disabled by default |
 | Firmware / Software | `sensor` | diagnostic, disabled by default |
 
@@ -88,23 +90,61 @@ and it is yours to make:
 - **On** — the GATT link is held permanently. State changes are pushed the
   instant they happen, but the mailbox keeps its radio awake: on a
   battery-powered device, that costs. Measured on ours: **58 % → 28 % in six
-  days**, batteries found flat afterwards. The mailbox's Bluetooth LED stays
-  lit the whole time, which is a handy way to check.
-- **Off** (default) — no connection at all. Already-known values stay on
-  display, and *Last connected* tells you how old they are. Presence keeps
-  being tracked through advertisements, which cost the mailbox nothing.
+  days**, batteries found flat afterwards.
+- **Off** (default, **recommended**) — no connection at all between refreshes.
+  Already-known values stay on display, and *Last connected* tells you how old
+  they are. Presence keeps being tracked through advertisements, which cost
+  the mailbox nothing.
 
-Two settings are exposed through **Configure** on the integration entry, and
-applied without restarting Home Assistant:
+### The Bluetooth LED
+
+The mailbox's own Bluetooth LED lights for as long as *any* central holds a
+GATT link to it — including this integration's, but **not**, on ours, while
+the vendor's own bridge dongle holds one. That difference sent us looking for
+a cause:
+
+- **Tested and confirmed:** without any explicit request, the proxy firmware
+  held its link at NimBLE's default connection interval — **30–50 ms, zero
+  slave latency** — meaning the mailbox's radio had to wake and answer 20 to
+  33 times *per second* for as long as the link stayed up. From
+  [v0.2.0](firmware/nimble-ble-proxy/NOTICE.md) the proxy negotiates a much
+  looser **200–400 ms interval with slave latency**, a measured **~10–30×**
+  cut in that radio duty cycle — worth having regardless.
+- **Tested and disproven:** that change alone does **not** turn the LED off.
+  Holding the link at the new, far gentler interval still keeps it lit
+  continuously, just as before. The LED tracks *link presence*, not radio
+  traffic — the actual difference from the vendor dongle remains open (a
+  Bluetooth-level pairing/bonding the vendor dongle may perform and this proxy
+  does not is the leading unconfirmed theory).
+
+Given that, **holding the link is the only way to get a continuously lit LED**
+with today's firmware — there is no setting that gives you both an
+always-open connection and a dark LED. If the LED matters to you, leave
+**Hold connection** off and use the refresh interval below instead: the LED
+then only flashes for the few seconds each refresh takes.
+
+### Settings
+
+Three settings are exposed through **Configure** on the integration entry,
+and applied without restarting Home Assistant:
 
 | Setting | Range | What it does |
 |---|---|---|
-| Keepalive interval | 5–28 s | Main power lever while the link is held |
+| Keepalive interval | 5–28 s | Main power lever *while the link is held* |
 | Reconnect ceiling | 30–900 s | Backoff cap when the mailbox is out of range |
+| Refresh interval | 0–1440 min | Periodic short connection, link **not** held |
 
-The keepalive is capped at 28 s on purpose: the mailbox drops the connection
-after about **30 s** of silence. Past that, the link falls between two
-keepalives and reconnects in a loop — which costs *more* than holding it.
+**Refresh interval** is what keeps state usable with *Hold connection* off: a
+brief connection every N minutes re-reads door state, battery, and the
+[opening history](#opening-history) (see caveat there), then disconnects — the
+mailbox's radio, and the LED, are only active for the few seconds that takes.
+`0` disables it: state then only updates when you press **Open**. This is also
+where the connection-interval fix pays off even in short bursts — every
+refresh, and every held session, now runs at the gentler interval.
+
+The keepalive is capped at 28 s on purpose: the mailbox drops a *held*
+connection after about **30 s** of silence. Past that, the link falls between
+two keepalives and reconnects in a loop — which costs *more* than holding it.
 
 > Reloading the config entry does **not** reload the integration's Python code;
 > it stays cached in the Home Assistant process. After updating the component
@@ -179,6 +219,34 @@ it is both the default and the battery-friendly setting.
 The press only reports success once the mailbox answers `VALID_OPEN_CODE`. A
 GATT write on its own proves nothing — a refused code and an unheard command
 would look identical.
+
+## Opening history
+
+Two diagnostic sensors report the most recent opening by each of the
+mailbox's own methods:
+
+- **Last VIGIK opening** — a La Poste NFC badge (`tagType` `0x01` in the
+  mailbox's own event log).
+- **Last code opening** — a permanent code entered at the physical keypad.
+
+Both dates are **approximate**: the mailbox has no clock, so each logged event
+carries an age in seconds relative to *now*, not a timestamp. Reading the log
+right after the connection was briefly held elsewhere can also miss the very
+latest event.
+
+> **Read this before enabling.** The mailbox's event log is a **single,
+> shared, consumable** history — reading it (`REQUEST_LOGS`) *drains* it:
+> already-read events are gone from it for good, for every reader. This same
+> log is what the vendor's own bridge dongle catches up on when it comes back
+> online after being disconnected. Reading it from here on a schedule can
+> **steal events from the vendor app's own history** before the dongle ever
+> sees them.
+>
+> These sensors are therefore driven entirely by **Refresh interval** (see
+> [Holding the link](#holding-the-link)) and default to **never reading** —
+> `0` means the log is never touched. Only turn it on if you are fine with
+> this integration's log reads competing with the vendor dongle's, or if you
+> know the dongle is offline.
 
 ## Battery: alkaline vs regulated cells
 

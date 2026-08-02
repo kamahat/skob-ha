@@ -68,15 +68,24 @@ one dashboard feature, one file rename, and one connection-power change:
   interval with zero slave latency: the peripheral must wake and respond on
   every connection event, 20-33 times a second, for as long as the link is
   held — fine for the upstream project's general low-latency use case, costly
-  for a battery-powered peripheral held connected long-term. Measured effect
-  on our mailbox: a visible "Bluetooth active" LED that stayed lit continuously
-  (unlike the vendor's own dongle, whose connection the LED does not track the
-  same way) and a 58%→28% battery drop over 6 days while a permanent link was
-  held. Widened to 200-400 ms / latency 4 / 6000 ms supervision timeout — a
-  ~10-30× reduction in radio duty cycle, comfortably under the ~30 s
-  application-level watchdog a held link still needs to satisfy with periodic
-  writes. See `proxy_config.h` for the exact values and the BLE-spec unit
-  conversions.
+  for a battery-powered peripheral held connected long-term. What prompted the
+  change: a 58%→28% battery drop over 6 days while a permanent link was held,
+  and a mailbox "Bluetooth active" LED that stayed lit continuously (unlike
+  the vendor's own dongle's connection). Widened to 200-400 ms / latency 4 /
+  6000 ms supervision timeout — a ~10-30× reduction in radio duty cycle,
+  comfortably under the ~30 s application-level watchdog a held link still
+  needs to satisfy with periodic writes. See `proxy_config.h` for the exact
+  values and the BLE-spec unit conversions.
+
+  **Tested after deploying (2026-08-02): this change does not affect the
+  LED.** Holding the link at the new, far gentler interval still keeps it lit
+  continuously — it tracks link *presence*, not radio traffic. The battery
+  benefit (fewer radio wake-ups) stands regardless; the LED difference from
+  the vendor dongle remains unexplained. A link-layer pairing/bonding step the
+  vendor dongle may perform, and this proxy never initiates, is the leading
+  unconfirmed theory — not pursued yet, since testing it means eliciting
+  untested behaviour from a live access-control peripheral. See
+  [skob-ha README § Holding the link](https://github.com/kamahat/skob-ha#holding-the-link).
 
 - `README.md` → `README-DETAIL.md` — **renamed, contents untouched.** The
   upstream author's document is a technical reference, not a build guide, and
