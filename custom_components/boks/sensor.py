@@ -12,43 +12,11 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import PERCENTAGE, EntityCategory, SIGNAL_STRENGTH_DECIBELS_MILLIWATT
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 from .coordinator import BoksLink
-from .entity import BoksEntity
-
-
-class _RestoreIntoState(RestoreEntity):
-    """Restaure la dernière valeur connue dans l'état de la liaison.
-
-    Les valeurs vivent en mémoire et repartent vides après un redémarrage de
-    Home Assistant. Ce mixin réinjecte la dernière valeur persistée dans
-    ``BoksLink.state`` au démarrage — tant qu'aucune connexion n'a encore fourni
-    de valeur fraîche — pour que le tableau de bord ne soit pas vide en
-    attendant le prochain rafraîchissement.
-    """
-
-    #: Attribut de ``BoksState`` à restaurer et fonction de parsing.
-    _restore_attr: str = ""
-
-    def _restore_parse(self, raw: str):  # noqa: ANN001 - surchargé
-        return raw
-
-    async def async_added_to_hass(self) -> None:
-        await super().async_added_to_hass()
-        last = await self.async_get_last_state()
-        if last is None or last.state in (None, "unknown", "unavailable"):
-            return
-        if getattr(self._link.state, self._restore_attr) is not None:
-            return  # une valeur fraîche a déjà été obtenue
-        try:
-            value = self._restore_parse(last.state)
-        except (ValueError, TypeError):
-            return
-        if value is not None:
-            setattr(self._link.state, self._restore_attr, value)
+from .entity import BoksEntity, RestoreIntoState
 
 
 async def async_setup_entry(
@@ -74,7 +42,7 @@ async def async_setup_entry(
     )
 
 
-class BoksBatterySensor(BoksEntity, SensorEntity, _RestoreIntoState):
+class BoksBatterySensor(BoksEntity, SensorEntity, RestoreIntoState):
     """Niveau de batterie (poussé par la Boks, lu à la connexion)."""
 
     _attr_device_class = SensorDeviceClass.BATTERY
@@ -145,7 +113,7 @@ class BoksVersionSensor(BoksEntity, SensorEntity):
         return getattr(self._link.state, self._key)
 
 
-class BoksLastConnectedSensor(BoksEntity, SensorEntity, _RestoreIntoState):
+class BoksLastConnectedSensor(BoksEntity, SensorEntity, RestoreIntoState):
     """Horodatage du dernier lien GATT établi.
 
     Sert surtout quand la connexion n'est pas maintenue : il dit de quand
@@ -220,7 +188,7 @@ class BoksLabelSensor(BoksEntity, SensorEntity):
         return self._link.label
 
 
-class _BoksOpeningSensor(BoksEntity, SensorEntity, _RestoreIntoState):
+class _BoksOpeningSensor(BoksEntity, SensorEntity, RestoreIntoState):
     """Base des « dernière ouverture … » — horodatage tiré de l'historique.
 
     Ces dates sont **approximatives** : la boîte n'a pas d'horloge et date ses

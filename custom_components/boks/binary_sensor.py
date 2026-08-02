@@ -12,7 +12,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .coordinator import BoksLink
-from .entity import BoksEntity
+from .entity import BoksEntity, RestoreIntoState
 
 
 async def async_setup_entry(
@@ -25,10 +25,22 @@ async def async_setup_entry(
     )
 
 
-class BoksDoorSensor(BoksEntity, BinarySensorEntity):
-    """Porte de la boîte aux lettres (poussé par la Boks)."""
+class BoksDoorSensor(BoksEntity, BinarySensorEntity, RestoreIntoState):
+    """Porte de la boîte aux lettres (poussé par la Boks).
+
+    Restaure son dernier état connu au redémarrage de Home Assistant : sans
+    cela elle repartait en « unknown » entre deux rafraîchissements — visible
+    depuis le passage au modèle de connexion périodique, où l'entité vit la
+    plupart du temps sans lien actif.
+    """
 
     _attr_device_class = BinarySensorDeviceClass.DOOR
+    _restore_attr = "door_open"
+
+    def _restore_parse(self, raw: str) -> bool:
+        if raw not in ("on", "off"):
+            raise ValueError(f"état de porte inattendu: {raw!r}")
+        return raw == "on"
 
     def __init__(self, link: BoksLink) -> None:
         super().__init__(link, "door")
