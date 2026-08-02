@@ -524,14 +524,15 @@ class BoksLink:
                 _LOGGER.debug("notify batterie indisponible: %s", err)
             self._notify_listeners()
 
-            # Une lecture d'historique par établissement de lien : met à jour les
-            # dates de dernière ouverture VIGIK / code au clavier. ATTENTION :
-            # REQUEST_LOGS *draine* le journal (curseur persistant côté boîte) —
-            # cf. _async_read_history.
-            try:
-                await self._async_read_history(client)
-            except (BleakError, EOFError) as err:
-                _LOGGER.debug("lecture historique impossible: %s", err)
+            # Lecture d'historique — UNIQUEMENT si le suivi est activé
+            # (refresh_interval > 0). REQUEST_LOGS *draine* le journal (curseur
+            # persistant côté boîte) qui sert de backlog au BoksLINK officiel :
+            # on ne draine donc jamais sans que l'utilisateur l'ait choisi.
+            if self.refresh_interval > 0:
+                try:
+                    await self._async_read_history(client)
+                except (BleakError, EOFError) as err:
+                    _LOGGER.debug("lecture historique impossible: %s", err)
 
             while not self._stop.is_set() and client.is_connected:
                 # Réarme le watchdog de la Boks et rafraîchit l'état de la porte.
