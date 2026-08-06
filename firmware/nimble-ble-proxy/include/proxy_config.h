@@ -13,7 +13,7 @@
 
 namespace proxy {
 
-inline constexpr const char *VERSION = "0.2.0";
+inline constexpr const char *VERSION = "0.2.1";
 
 // Compile-time default hostname. Runtime value is exposed via
 // `hostname()` below — it may be overridden by an NVS entry loaded at
@@ -37,9 +37,18 @@ inline constexpr const char *FRIENDLY_NAME = "NimBLE Proxy";
 inline constexpr const char *MODEL = "esp32-s3-devkitc";
 inline constexpr const char *MANUFACTURER = "Custom";
 
-// Reported as DeviceInfoResponse.esphome_version. HA only sanity-checks this,
-// but it should look like a current release so the integration doesn't warn.
-inline constexpr const char *FAKE_ESPHOME_VERSION = "2026.5.0";
+// Reported as DeviceInfoResponse.esphome_version. HA does more than sanity-check
+// it: the ESPHome integration raises a **repair issue** ("update <device> to
+// ESPHome 2026.5.1 or later") for any Bluetooth-proxy device reporting below
+// 2026.5.1, so anything older produces a permanent warning in the UI.
+//
+// This is a declared version, not an implemented one — this firmware is an
+// independent reimplementation of the ESPHome API, not a build of ESPHome. In
+// particular it does **not** carry the low-latency event handling that real
+// ESPHome 2026.5.1 introduced (BLE event dispatch cut from 0-16 ms to ~12 µs);
+// the value here only tells HA's version gate that we are not a stale device.
+// If HA ever raises that floor, raise this to match.
+inline constexpr const char *FAKE_ESPHOME_VERSION = "2026.5.1";
 
 // aioesphomeapi protocol version we claim to speak. 1.14 is current as of
 // ESPHome 2026.x; bumping just adds optional fields, never breaks framing.

@@ -29,7 +29,8 @@ remain under their original MIT terms.
 ## What was changed relative to upstream
 
 One source modification needed to build on Windows, one build-default change,
-one dashboard feature, one file rename, and one connection-power change:
+one dashboard feature, one file rename, one connection-power change, and one
+reported-version bump:
 
 - `components/api_proto/CMakeLists.txt` — the nanopb generator was invoked as
   hard-coded `python3`, which does not exist as an executable on Windows (it
@@ -86,6 +87,15 @@ one dashboard feature, one file rename, and one connection-power change:
   unconfirmed theory — not pursued yet, since testing it means eliciting
   untested behaviour from a live access-control peripheral. See
   [skob-ha README § Holding the link](https://github.com/kamahat/skob-ha#holding-the-link).
+
+- `include/proxy_config.h` — `FAKE_ESPHOME_VERSION` raised from upstream's
+  `"2026.5.0"` to `"2026.5.1"`. Home Assistant's ESPHome integration raises a
+  permanent **repair issue** ("update this device to ESPHome 2026.5.1 or
+  later") for any Bluetooth-proxy device reporting below that, so upstream's
+  value produces a standing warning in the UI. Note this is a *declared*
+  version: this firmware is an independent reimplementation of the ESPHome
+  API and does not carry the low-latency event handling real ESPHome 2026.5.1
+  ships — the string only clears HA's version gate.
 
 - `README.md` → `README-DETAIL.md` — **renamed, contents untouched.** The
   upstream author's document is a technical reference, not a build guide, and
