@@ -4,6 +4,20 @@ All notable changes to this integration are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/), and the project
 follows [Semantic Versioning](https://semver.org/).
 
+## [1.0.0] — 2026-08-20
+
+### Added
+- Bilingual quick-start guide: `Quick-guide.md` (EN) and
+  `docs/fr/Quick-guide.md` (FR) — the fast path from a fresh install to a
+  working device, distinct from the full README.
+
+### Changed
+- First release tagged 1.0.0. No functional change from v0.3.0: this marks
+  the integration as mature for everyday use (read-only-by-default model
+  unchanged since v0.1.0, connection-handling and battery-interpretation
+  issues resolved in v0.2.0/v0.3.0). See TODO.md for what is still open
+  (test suite, CI, a few Bluetooth-stack edge cases).
+
 ## [0.3.0] — 2026-08-02
 
 ### Added
@@ -83,6 +97,7 @@ follows [Semantic Versioning](https://semver.org/).
 - Early read-only release: door, battery, BLE link and version sensors over a
   maintained BLE connection, with Bluetooth discovery.
 
+[1.0.0]: https://github.com/kamahat/skob-ha/releases/tag/v1.0.0
 [0.3.0]: https://github.com/kamahat/skob-ha/releases/tag/v0.3.0
 [0.2.0]: https://github.com/kamahat/skob-ha/releases/tag/v0.2.0
 [0.1.1]: https://github.com/kamahat/skob-ha/releases/tag/v0.1.1
