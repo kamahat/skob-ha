@@ -236,6 +236,28 @@ L'appui n'est réputé réussi qu'une fois la réponse `VALID_OPEN_CODE` reçue.
 écriture GATT ne prouve rien à elle seule : un code refusé et une commande non
 entendue se ressembleraient exactement.
 
+## Autres méthodes d'ouverture (Mifare, Vigik)
+
+La boîte peut aussi être ouverte avec un **badge NFC Mifare** ou un badge
+d'accès **Vigik**, indépendamment de Home Assistant — tous deux sont lus par
+le clavier/lecteur NFC de la boîte elle-même et gérés via l'application ou le
+compte du fabricant, pas via cette intégration.
+
+**Cette intégration ne lit, n'enregistre ni ne révoque de badge d'aucun des
+deux types, et elle ne crée ni ne gère de code permanent non plus** — le
+code utilisé ci-dessus doit déjà exister sur votre compte. Gérer des badges
+ou des codes nécessite la Config Key du propriétaire et un accès en écriture
+à la boîte, une étape volontairement plus large que le modèle
+lecture-seule-par-défaut suivi ici aujourd'hui. C'est sur la feuille de
+route — voir [TODO.md § Badge NFC Mifare](TODO.md#1-badge-nfc-mifare) et
+[TODO.md § Badge Vigik](TODO.md#2-badge-vigik) pour le détail du protocole
+et ce qui bloque encore.
+
+Ouvrir avec un badge n'interagit pas du tout avec cette intégration : ça
+continue de fonctionner exactement comme avant, et n'apparaît ici
+qu'indirectement, via l'[historique des ouvertures](#historique-des-ouvertures)
+si vous l'activez.
+
 ## Historique des ouvertures
 
 Deux capteurs de diagnostic rapportent la plus récente ouverture par chacune
