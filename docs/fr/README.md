@@ -2,13 +2,16 @@
 
 # Boks pour Home Assistant
 
-Intégration Home Assistant pour la boîte aux lettres connectée **Boks**,
-installable via [HACS](https://hacs.xyz/). **En lecture seule tant que vous
-n'activez pas** l'ouverture à distance en renseignant un code — voir
-[Périmètre](#périmètre).
+Votre boîte **Boks**, connectée directement à Home Assistant : l'état de la
+porte arrive à l'instant où il change, pas au prochain sondage, et rien ne
+transite par le cloud du fabricant.
 
-La boîte est jointe en Bluetooth LE. Home Assistant est prévenu **à l'instant
-où l'état de la porte change** — aucun polling.
+Nouveau ici ? Le **[guide de démarrage rapide](Quick-guide.md)** installe une
+boîte fonctionnelle en cinq étapes. Ce README couvre la vue complète —
+arbitrages, plusieurs boîtes, dépannage.
+
+Installable via [HACS](https://hacs.xyz/). **En lecture seule par défaut** —
+l'ouverture à distance est optionnelle, voir [Périmètre](#périmètre).
 
 | Entité | Type | Remarques |
 |---|---|---|

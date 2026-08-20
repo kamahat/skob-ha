@@ -2,12 +2,16 @@
 
 # Boks for Home Assistant
 
-A Home Assistant integration for the **Boks** connected mailbox, installable
-through [HACS](https://hacs.xyz/). **Read-only unless you opt in** to remote
-opening by entering a code — see [Scope](#scope).
+Your **Boks** mailbox, talking directly to Home Assistant: the door state
+lands the instant it changes, not on the next poll, and none of it goes
+through the vendor's cloud.
 
-The mailbox is reached over Bluetooth LE. Home Assistant is notified **the
-moment the door state changes** — there is no polling.
+New here? The **[Quick guide](Quick-guide.md)** gets a mailbox up and running
+in five steps. This README covers the full picture — trade-offs, several
+mailboxes, troubleshooting.
+
+Installable through [HACS](https://hacs.xyz/). **Read-only by default** —
+remote opening is opt-in, see [Scope](#scope).
 
 | Entity | Type | Notes |
 |---|---|---|
