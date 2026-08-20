@@ -8,21 +8,25 @@ the [README](README.md).
 
 ## 1. Unplug the vendor dongle
 
-The official dongle holds a permanent BLE connection and makes the mailbox
-invisible to every other client, including this integration. Unplug it first.
+The official dongle holds a permanent Bluetooth connection and makes the
+mailbox invisible to every other client, including this integration. Unplug
+it first.
 
 ## 2. Get a NimBLE Bluetooth proxy in range
 
-Stock ESPHome proxies (Bluedroid) never finish GATT discovery on this mailbox
-in time. Build the bundled proxy firmware — see
-[firmware/nimble-ble-proxy/README.md](firmware/nimble-ble-proxy/README.md)
-and the [hardware guide](docs/hardware.md) — then let Home Assistant's
-**ESPHome** integration pick it up over mDNS.
+Stock ESPHome Bluetooth proxies (Bluedroid) never complete discovery on this
+mailbox.
+
+Pick the hardware that suits you: see the [hardware guide](docs/hardware.md).
+
+Build the bundled firmware — see
+[firmware/nimble-ble-proxy/README.md](firmware/nimble-ble-proxy/README.md) —
+then let Home Assistant's **ESPHome** integration pick it up over mDNS.
 
 ## 3. Install the integration
 
-1. HACS → ⋮ → **Custom repositories** → add this repository, category
-   **Integration**.
+1. HACS → ⋮ → **Custom repositories** → add this repository
+   (https://github.com/kamahat/skob-ha), category **Integration**.
 2. Install **Boks**, restart Home Assistant.
 3. **Settings → Devices & services**: the mailbox is discovered
    automatically. Otherwise, *Add integration → Boks*.
@@ -51,8 +55,8 @@ the mailbox. Details: [Opening the door](README.md#opening-the-door).
   state refreshes, or to enable the opening-history sensors — but read
   [Opening history](README.md#opening-history) first: reading the log drains
   it.
-- **Battery gauge**: meaningless with regulated lithium cells. Flip
-  **Rechargeable batteries** on and use the **Battery low** sensor, not the
+- **Battery gauge**: doesn't work with regulated lithium cells. Turn on
+  **Rechargeable batteries** and use the **Battery low** sensor, not the
   percentage. See [Battery](README.md#battery-alkaline-vs-regulated-cells).
 
 ## Something not working?

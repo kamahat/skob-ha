@@ -16,7 +16,7 @@ premier.
 Les proxys Bluetooth ESPHome standard (Bluedroid) n'aboutissent jamais à la découverte
 sur cette boîte.
 
-Choisir le materiel qui vous convient :  le [guide matériel](hardware.md) 
+Choisissez le matériel qui vous convient : le [guide matériel](hardware.md).
 
 Compilez le firmware fourni — voir [firmware/nimble-ble-proxy/README-FR.md](../../firmware/nimble-ble-proxy/README-FR.md)
 puis laissez l'intégration **ESPHome** de Home Assistant le détecter en mDNS.
@@ -57,7 +57,7 @@ Assistant peut alors ouvrir la boîte. Détails :
   [Historique des ouvertures](README.md#historique-des-ouvertures) : lire le
   journal le draine.
 - **Jauge de batterie** : ne fonctionne pas avec des piles lithium
-  régulées. Activez **Piles rechargeables**
+  régulées. Activez **Piles rechargeables** et utilisez le capteur
   **Piles à remplacer**, pas le pourcentage. Voir
   [Batterie](README.md#batterie--alcalines-ou-cellules-régulées).
 
