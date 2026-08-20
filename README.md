@@ -224,6 +224,27 @@ The press only reports success once the mailbox answers `VALID_OPEN_CODE`. A
 GATT write on its own proves nothing — a refused code and an unheard command
 would look identical.
 
+## Other opening methods (Mifare, Vigik)
+
+The mailbox can also be opened with a **Mifare NFC badge** or a **Vigik**
+access badge, entirely independently of Home Assistant — both are read at
+the mailbox's own keypad/NFC reader and managed through the vendor's app or
+account, not through this integration.
+
+**This integration neither reads, registers, nor revokes badges of either
+kind, and it does not create or manage permanent codes either** — the code
+used above has to already exist on your account. Managing badges or codes
+requires the owner's Config Key and write access to the mailbox, a
+deliberately bigger step than the read-only-by-default model this
+integration keeps to today. It is on the roadmap — see
+[TODO.md § Mifare NFC badge](TODO.md#1-mifare-nfc-badge) and
+[TODO.md § Vigik badge](TODO.md#2-vigik-badge) for the protocol details and
+what is blocking it.
+
+Opening with a badge does not interact with this integration at all: it
+keeps working exactly as before, and only shows up here indirectly, through
+[Opening history](#opening-history) if you enable it.
+
 ## Opening history
 
 Two diagnostic sensors report the most recent opening by each of the
