@@ -8,21 +8,22 @@ dépannage — voir le [README](README.md).
 
 ## 1. Débranchez le dongle du fabricant
 
-Le dongle officiel maintient une connexion BLE permanente et rend la boîte
+Le dongle officiel maintient une connexion Bluetooth permanente et rend la boîte
 invisible pour tout autre client, dont cette intégration. Débranchez-le en
 premier.
 
 ## 2. Un proxy Bluetooth NimBLE à portée
+Les proxys Bluetooth ESPHome standard (Bluedroid) n'aboutissent jamais à la découverte
+sur cette boîte.
 
-Les proxys ESPHome standard (Bluedroid) n'aboutissent jamais à la découverte
-GATT sur cette boîte dans le délai imparti. Compilez le firmware fourni —
-voir [firmware/nimble-ble-proxy/README-FR.md](../../firmware/nimble-ble-proxy/README-FR.md)
-et le [guide matériel](hardware.md) — puis laissez l'intégration **ESPHome**
-de Home Assistant le détecter en mDNS.
+Choisir le materiel qui vous convient :  le [guide matériel](hardware.md) 
+
+Compilez le firmware fourni — voir [firmware/nimble-ble-proxy/README-FR.md](../../firmware/nimble-ble-proxy/README-FR.md)
+puis laissez l'intégration **ESPHome** de Home Assistant le détecter en mDNS.
 
 ## 3. Installez l'intégration
 
-1. HACS → ⋮ → **Dépôts personnalisés** → ajoutez ce dépôt, catégorie
+1. HACS → ⋮ → **Dépôts personnalisés** → ajoutez ce dépôt https://github.com/kamahat/skob-ha , catégorie
    **Intégration**.
 2. Installez **Boks**, redémarrez Home Assistant.
 3. **Paramètres → Appareils et services** : la boîte est détectée
@@ -55,8 +56,8 @@ Assistant peut alors ouvrir la boîte. Détails :
   capteurs d'historique d'ouverture — mais lisez d'abord
   [Historique des ouvertures](README.md#historique-des-ouvertures) : lire le
   journal le draine.
-- **Jauge de batterie** : sans signification avec des piles lithium
-  régulées. Activez **Piles rechargeables** et utilisez le capteur
+- **Jauge de batterie** : ne fonctionne pas avec des piles lithium
+  régulées. Activez **Piles rechargeables**
   **Piles à remplacer**, pas le pourcentage. Voir
   [Batterie](README.md#batterie--alcalines-ou-cellules-régulées).
 
