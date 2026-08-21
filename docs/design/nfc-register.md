@@ -133,47 +133,50 @@ devant réussir avant le suivant :
   ni via le proxy, ni via BlueZ. (Un `connectAsync` noble ne force pas le bond ;
   BlueZ ne bonde que si une opération l'exige, ce que l'écriture ne fait pas.)
 
-### Résolution réelle — une session SRP chiffrée (2026-08-21)
+### Analyse du dump du dongle (2026-08-21) — ce qui est établi, et une erreur corrigée
 
-L'analyse du **dump firmware du dongle officiel** (AtomS3U, flash 8 Mo non
-chiffrée, cf. dépôt privé `skob` doc 09) tranche : le `225` n'est **ni** le proxy
-**ni** le bonding BLE. Les commandes d'admin passent par une **session applicative
-chiffrée et authentifiée**, que le dongle établit et qu'on ne reproduisait pas.
+> **Correction.** Une version antérieure de cette section (et le rapport de dump
+> §8) attribuait à la **session BLE avec la boîte** un handshake **SRP + ECDH +
+> AES**. **C'est faux.** Vérification faite sur les strings : ces primitives
+> appartiennent à l'**ESP-IDF protocomm** (`PROTOCOMM_SECURITY_SESSION_EVENT`,
+> `SEC2_MSG_TYPE__S2Session_Command`, `handle_session_command1`, « *Invalid
+> username* »…), c.-à-d. la sécurité du **provisioning WiFi** (téléphone ↔
+> dongle), **pas** le dialogue avec la boîte. Fausse piste.
 
-Preuves dans le firmware (strings + désassemblage) :
-- Handshake **ECDH / X25519** + **SRP** : « *Using salt and verifier to generate
-  public key* », « *Failed to generate device session key!* », « *Failed to
-  authenticate client proof!* » ; clés NVS `device_salt`, `device_proof`,
-  `client_proof`.
-- Chiffrement de session **AES-CTR/GCM + SHA-256**, `device_nonce`, « *device
-  session key* ».
+Ce qui **est** établi par le dump :
 
-Modèle : **la boîte est le serveur SRP** (elle détient salt+verifier) ; **le
-dongle est le client SRP** (il fournit un *mot de passe*). L'inventaire NVS du
-dongle **ne contient aucun secret persistant** (creds MQTT/mac vides, récupérés
-du cloud au boot ; pas de `device_salt`/`verifier`/`config_key` stocké). Le mot
-de passe SRP est donc fourni **par le code** — très probablement la **Config Key**
-(ou la Master Key) qu'on possède déjà, mais **utilisée dans le handshake**, pas
-posée en clair dans une trame.
+- **Le canal boîte est en clair.** `open_boks` loggue « *Sending door open request
+  with code %s* » : le dongle **relaie un code d'ouverture en clair** (le code
+  vient du cloud par MQTT `boks/<id>/door`). C'est exactement notre format
+  `OPEN_DOOR` plaintext, qui marche. Donc pas de chiffrement applicatif côté boîte.
+- **Le dongle gère bien register + VIGIK.** Strings `NFC_TAG_REGISTERING_SCAN`,
+  `nfcTag`, `laposte_service_universel`, `laposte_autres_services`. Il **est**
+  la voie de ces opérations.
+- **Le dongle embarque tout NimBLE SMP** (chiffrement/bonding) et traite les
+  « *encryption change event* ». La table d'erreurs GATT inclut
+  `BLE_ATT_ERR_INSUFFICIENT_ENC` (« *requires encryption before write* »).
 
-**Pourquoi `225` :** on envoyait `SCAN_START`/register en **trame claire** avec la
-Config Key dans le payload. La boîte exige ces opérations **sur la session SRP
-authentifiée**. L'ouverture par PIN marche en clair (code validé directement),
-mais l'admin (register, VIGIK, regen) exige la poignée de main.
+**Ce qui n'est PAS résolu :** comment le dongle authentifie register/VIGIK auprès
+de la boîte. Le flux de connexion loggé est `connect → discover → subscribe`, sans
+étape de chiffrement explicite tracée — mais l'absence de *string* ne prouve pas
+l'absence d'appel. Deux candidats subsistent :
+1. **Lien chiffré/bondé requis pour l'admin.** La boîte renverrait un `225`
+   applicatif tant que le lien n'est pas chiffré (l'ouverture, elle, marche non
+   bondée car validée par un code). Cohérent avec le SMP présent côté dongle et
+   le `INSUFFICIENT_ENC`. **Non testé** : ni le proxy ni notre `connectAsync`
+   noble n'ont établi de lien bondé.
+2. **Un credential différent** attaché à la commande register (pas la seule
+   Config Key en payload).
 
-**Chemin vers le 100 % local** (register Mifare, activation VIGIK, voire ouverture
-sans cloud) : **reverse-engineerer le handshake SRP+ECDH+AES** depuis le
-désassemblage du dongle et le réimplémenter en client. Tout est disponible (le
-firmware l'implémente, il est désassemblé, primitives mbedTLS identifiées). On n'a
-probablement **pas besoin d'un secret supplémentaire** si le mot de passe SRP est
-la Config Key déjà en main. Effort réel mais bien cadré, et **read-only** jusqu'au
-test effectif du handshake (qui peut commencer en établissant juste la session,
-sans écriture).
+**Trancher (1) est empirique et rapide** : établir un lien **bondé** (appairage
+explicite `bluetoothctl` sur le Pi4) puis rejouer `SCAN_START`. Si le `225` tombe,
+c'est le bonding — et register + VIGIK deviennent faisables en local. Sinon, il
+faut du désassemblage fonctionnel du chemin de commande boîte (Xtensa sans
+symboles — lent). L'appairage **écrit un bond dans la boîte** (réversible ;
+n'affecte ni codes ni Master Key).
 
-**Décision : écriture NFC parquée en l'état, mais débloquable** — non plus par
-appairage/bonding (hypothèse abandonnée) ni Master Key, mais par la **RE du
-handshake SRP**. C'est le vrai levier, et il sert aussi le VIGIK et l'ouverture
-locale.
+**Décision : écriture NFC toujours parquée**, prochaine étape = le **test
+d'appairage explicite** (empirique, décisif sur l'hypothèse 1), sur accord.
 - **Palier 1 — badge de test jetable.** Enregistrer un badge Mifare neuf
   (`24` → `200`), vérifier physiquement qu'il ouvre la boîte, puis le révoquer
   (`25` → `202`), vérifier qu'il n'ouvre plus. Jamais sur un badge en service.
