@@ -133,23 +133,47 @@ devant réussir avant le suivant :
   ni via le proxy, ni via BlueZ. (Un `connectAsync` noble ne force pas le bond ;
   BlueZ ne bonde que si une opération l'exige, ce que l'écriture ne fait pas.)
 
-### Conclusion de l'investigation
+### Résolution réelle — une session SRP chiffrée (2026-08-21)
 
-Le format des opcodes `23-25` est correct et la boîte les honore, mais leur
-**auth** (Config Key seule) est refusée partout. Recoupé avec le modèle établi
-(badges **pré-provisionnés**, gérés **cloud BoksTAG → poussés par le dongle**,
-cf. dépôt privé `skob` doc 10), la lecture la plus probable est que `23-25` sont
-la voie de **provisioning du dongle**, authentifiée par une **identité/bond
-propre au dongle** que la Config Key ne reproduit pas. **L'enregistrement local
-d'un badge en BLE n'est donc pas la voie du propriétaire**, et s'avère **inutile
-en pratique** : les tags arrivent provisionnés et l'intégration **détecte déjà
-leur usage** (capteur « Dernière ouverture badge », v1.1.0).
+L'analyse du **dump firmware du dongle officiel** (AtomS3U, flash 8 Mo non
+chiffrée, cf. dépôt privé `skob` doc 09) tranche : le `225` n'est **ni** le proxy
+**ni** le bonding BLE. Les commandes d'admin passent par une **session applicative
+chiffrée et authentifiée**, que le dongle établit et qu'on ne reproduisait pas.
 
-**Décision : écriture NFC parquée.** On garde le volet lecture livré et ce
-diagnostic. Reprise possible seulement si (a) on veut tenter un **appairage
-explicite** (`bluetoothctl pair`, invasif : écrit un bond dans la boîte), ou
-(b) on reverse-engineere l'identité d'auth du dongle, ou (c) on passe par
-l'**API cloud** des BoksTAG (à rebours de l'objectif local).
+Preuves dans le firmware (strings + désassemblage) :
+- Handshake **ECDH / X25519** + **SRP** : « *Using salt and verifier to generate
+  public key* », « *Failed to generate device session key!* », « *Failed to
+  authenticate client proof!* » ; clés NVS `device_salt`, `device_proof`,
+  `client_proof`.
+- Chiffrement de session **AES-CTR/GCM + SHA-256**, `device_nonce`, « *device
+  session key* ».
+
+Modèle : **la boîte est le serveur SRP** (elle détient salt+verifier) ; **le
+dongle est le client SRP** (il fournit un *mot de passe*). L'inventaire NVS du
+dongle **ne contient aucun secret persistant** (creds MQTT/mac vides, récupérés
+du cloud au boot ; pas de `device_salt`/`verifier`/`config_key` stocké). Le mot
+de passe SRP est donc fourni **par le code** — très probablement la **Config Key**
+(ou la Master Key) qu'on possède déjà, mais **utilisée dans le handshake**, pas
+posée en clair dans une trame.
+
+**Pourquoi `225` :** on envoyait `SCAN_START`/register en **trame claire** avec la
+Config Key dans le payload. La boîte exige ces opérations **sur la session SRP
+authentifiée**. L'ouverture par PIN marche en clair (code validé directement),
+mais l'admin (register, VIGIK, regen) exige la poignée de main.
+
+**Chemin vers le 100 % local** (register Mifare, activation VIGIK, voire ouverture
+sans cloud) : **reverse-engineerer le handshake SRP+ECDH+AES** depuis le
+désassemblage du dongle et le réimplémenter en client. Tout est disponible (le
+firmware l'implémente, il est désassemblé, primitives mbedTLS identifiées). On n'a
+probablement **pas besoin d'un secret supplémentaire** si le mot de passe SRP est
+la Config Key déjà en main. Effort réel mais bien cadré, et **read-only** jusqu'au
+test effectif du handshake (qui peut commencer en établissant juste la session,
+sans écriture).
+
+**Décision : écriture NFC parquée en l'état, mais débloquable** — non plus par
+appairage/bonding (hypothèse abandonnée) ni Master Key, mais par la **RE du
+handshake SRP**. C'est le vrai levier, et il sert aussi le VIGIK et l'ouverture
+locale.
 - **Palier 1 — badge de test jetable.** Enregistrer un badge Mifare neuf
   (`24` → `200`), vérifier physiquement qu'il ouvre la boîte, puis le révoquer
   (`25` → `202`), vérifier qu'il n'ouvre plus. Jamais sur un badge en service.
