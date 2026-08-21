@@ -93,11 +93,38 @@ devant réussir avant le suivant :
   dongle** (réponse obtenue sur une connexion proxy en clair, non appairée). La
   faisabilité est établie. Harnais : `boks-esphome-test/palier0_scanstart.py` sur
   le bastion (n'émet QUE l'opcode 23).
-- **Palier 0b — vraie clé, badge déjà enregistré.** Envoyer `SCAN_START (23)`
-  avec la **vraie** Config Key, puis présenter un **badge DÉJÀ enregistré**.
-  Attendu : `197 FOUND` ou `198 ALREADY_EXISTS` (au lieu du `225` du 0a). Confirme
-  le chemin nominal et l'encodage ASCII de la vraie clé. Toujours aucun ajout ni
-  retrait (on n'émet jamais `24`).
+- **Palier 0b — vraie clé. ⚠️ BLOQUÉ (2026-08-21).** `SCAN_START (23)` avec la
+  **vraie** Config Key renvoie encore `225 UNAUTHORIZED`, avant même tout badge
+  (la boîte valide donc l'auth **en amont** du scan). Diagnostics menés :
+  - **La valeur de la clé est correcte.** Re-fetchée en direct via l'API compte
+    (`GET /api/pcbs/<pcbMac>/configuration-key`) : **identique** à celle du
+    fichier. Le compte confirme aussi `scanNfcLaposteEnabled=true`.
+  - **L'encodage n'est pas en cause.** Testé en ASCII-8, hex-4-octets et
+    ASCII-minuscules : les trois → `225` (et jamais `226`, donc la trame est
+    bien parsée). Le SDK indique par ailleurs que clé dérivée de la Master Key
+    et clé directe sont *la même* Config Key.
+  - **Le proxy ne sait pas appairer.** `bluetooth_proxy_feature_flags=39` (bit
+    `PAIRING`=8 absent) ; `connect(pair=True)` → `NotImplementedError`. Notre
+    lien BLE via le proxy est donc **non bondé**.
+
+  **Hypothèse dominante :** les opérations d'admin authentifiées par Config Key
+  exigent un **lien BLE appairé/bondé** — ce que le dongle officiel établit et
+  que le proxy ne fait pas. Cela expliquerait d'un coup le `225` (auth refusée
+  sur lien non bondé) **et** le mystère de longue date de la diode Bluetooth. Le
+  SDK n'expose aucune étape d'authentification séparée (juste `connect()` puis
+  `registerNfcTag()`), donc rien à « rejouer » côté application : la différence
+  est au niveau lien.
+
+  **Non prouvé :** que le bonding lève le `225`. Le confirmer exige un central
+  capable d'appairer (le Pi4 arbiter + noble, **hors ligne** au moment du test),
+  ou un firmware proxy avec support `PAIRING`. À reprendre quand l'un des deux
+  est disponible.
+
+  **Conséquence côté intégration :** le volet **lecture** (porte, batterie,
+  historique, capteurs d'ouverture) fonctionne sans bonding via le proxy, et
+  l'ouverture à distance aussi (elle utilise un PIN à usage unique, pas la Config
+  Key). Seules les **écritures admin** (register/unregister NFC) semblent
+  requérir un lien bondé, hors de portée du chemin proxy actuel.
 - **Palier 1 — badge de test jetable.** Enregistrer un badge Mifare neuf
   (`24` → `200`), vérifier physiquement qu'il ouvre la boîte, puis le révoquer
   (`25` → `202`), vérifier qu'il n'ouvre plus. Jamais sur un badge en service.
