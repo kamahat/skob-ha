@@ -125,6 +125,31 @@ devant réussir avant le suivant :
   l'ouverture à distance aussi (elle utilise un PIN à usage unique, pas la Config
   Key). Seules les **écritures admin** (register/unregister NFC) semblent
   requérir un lien bondé, hors de portée du chemin proxy actuel.
+
+- **Palier 0c — même 225 via un central natif (noble/BlueZ). ⛔ (2026-08-21).**
+  Rejoué depuis le Pi4 arbiter (noble, BLE natif) avec la vraie Config Key :
+  **encore `225`**, immédiat, avant tout badge. Donc **ce n'est pas un artefact
+  du proxy** : la Config Key seule, sur un lien BLE ordinaire, ne suffit pas —
+  ni via le proxy, ni via BlueZ. (Un `connectAsync` noble ne force pas le bond ;
+  BlueZ ne bonde que si une opération l'exige, ce que l'écriture ne fait pas.)
+
+### Conclusion de l'investigation
+
+Le format des opcodes `23-25` est correct et la boîte les honore, mais leur
+**auth** (Config Key seule) est refusée partout. Recoupé avec le modèle établi
+(badges **pré-provisionnés**, gérés **cloud BoksTAG → poussés par le dongle**,
+cf. dépôt privé `skob` doc 10), la lecture la plus probable est que `23-25` sont
+la voie de **provisioning du dongle**, authentifiée par une **identité/bond
+propre au dongle** que la Config Key ne reproduit pas. **L'enregistrement local
+d'un badge en BLE n'est donc pas la voie du propriétaire**, et s'avère **inutile
+en pratique** : les tags arrivent provisionnés et l'intégration **détecte déjà
+leur usage** (capteur « Dernière ouverture badge », v1.1.0).
+
+**Décision : écriture NFC parquée.** On garde le volet lecture livré et ce
+diagnostic. Reprise possible seulement si (a) on veut tenter un **appairage
+explicite** (`bluetoothctl pair`, invasif : écrit un bond dans la boîte), ou
+(b) on reverse-engineere l'identité d'auth du dongle, ou (c) on passe par
+l'**API cloud** des BoksTAG (à rebours de l'objectif local).
 - **Palier 1 — badge de test jetable.** Enregistrer un badge Mifare neuf
   (`24` → `200`), vérifier physiquement qu'il ouvre la boîte, puis le révoquer
   (`25` → `202`), vérifier qu'il n'ouvre plus. Jamais sur un badge en service.

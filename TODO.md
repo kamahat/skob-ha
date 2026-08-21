@@ -36,13 +36,16 @@ not preclude it here, and the feature can be developed and tested against real
 hardware. Other hardware generations may still differ, so the feature should
 detect capability rather than assume it.
 
-**Status.** Design written — see
-[docs/design/nfc-register.md](docs/design/nfc-register.md). The `23/24/25` frame
-format is established from the SDK (private repo `skob`, doc 02), and the **read**
-side — the *Last badge opening* sensor — already shipped (v1.1.0). Still to do on
-the write side: settle the design's open decisions (surface, validation plan,
-gating), then follow the staged validation plan (non-destructive first) against
-the box via the bastion before enabling.
+**Status.** Read side shipped (*Last badge opening* sensor, v1.1.0). **Write side
+(register/unregister) PARKED** — see
+[docs/design/nfc-register.md](docs/design/nfc-register.md). Real validation done:
+the box honors opcode 23 and our frame is correct, but the Config Key auth is
+rejected (`225`) **everywhere** — via the ESPHome proxy and via a native
+noble/BlueZ central, with the real key (value confirmed via the account API).
+Cross-referenced with the model (tags are pre-provisioned, managed cloud →
+dongle), `23-25` are most likely the **dongle's** provisioning path, with an auth
+identity the Config Key alone doesn't reproduce. Reopen only via explicit pairing
+(invasive), reverse-engineering the dongle's identity, or the cloud API.
 
 ---
 

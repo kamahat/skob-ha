@@ -37,13 +37,16 @@ développée et testée sur du vrai matériel. D'autres générations peuvent
 néanmoins différer : la fonction devra détecter la capacité plutôt que la
 supposer.
 
-**État.** Conception rédigée — voir
-[docs/design/nfc-register.md](../design/nfc-register.md). Le format des trames
-`23/24/25` est établi par lecture du SDK (dépôt privé `skob`, doc 02) ; le
-capteur de **lecture** « Dernière ouverture badge » est déjà livré (v1.1.0).
-Reste, côté écriture : trancher les décisions ouvertes de la conception
-(surface, plan de validation, gating), puis suivre le plan de validation par
-paliers (non destructif d'abord) sur la boîte via le bastion avant activation.
+**État.** Lecture livrée (capteur « Dernière ouverture badge », v1.1.0).
+**Écriture (register/unregister) PARQUÉE** — voir
+[docs/design/nfc-register.md](../design/nfc-register.md). Validation réelle
+menée : la boîte honore l'opcode 23 et notre trame est correcte, mais l'auth
+Config Key est refusée (`225`) **partout** — via le proxy ESPHome comme via un
+central natif noble/BlueZ, avec la vraie clé (valeur confirmée par l'API compte).
+Recoupé avec le modèle (badges pré-provisionnés, gérés cloud → dongle), `23-25`
+sont vraisemblablement la voie de provisioning du **dongle**, avec une identité
+d'auth propre que la Config Key seule ne reproduit pas. Reprise possible seulement
+via appairage explicite (invasif), RE de l'identité du dongle, ou l'API cloud.
 
 ---
 
