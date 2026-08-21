@@ -25,6 +25,7 @@ remote opening is opt-in, see [Scope](#scope).
 | Last connected | `sensor` (timestamp) | diagnostic — how fresh the values above are |
 | BLE address | `sensor` | diagnostic |
 | Last VIGIK opening | `sensor` (timestamp) | diagnostic — see [Opening history](#opening-history) |
+| Last badge opening | `sensor` (timestamp) | diagnostic — see [Opening history](#opening-history) |
 | Last code opening | `sensor` (timestamp) | diagnostic — see [Opening history](#opening-history) |
 | RSSI | `sensor` (dBm) | diagnostic, disabled by default |
 | Firmware / Software | `sensor` | diagnostic, disabled by default |
@@ -247,11 +248,13 @@ keeps working exactly as before, and only shows up here indirectly, through
 
 ## Opening history
 
-Two diagnostic sensors report the most recent opening by each of the
+Three diagnostic sensors report the most recent opening by each of the
 mailbox's own methods:
 
 - **Last VIGIK opening** — a La Poste NFC badge (`tagType` `0x01` in the
   mailbox's own event log).
+- **Last badge opening** — an associated Mifare badge / BoksTAG (`tagType`
+  `0x03`), distinct from VIGIK.
 - **Last code opening** — a permanent code entered at the physical keypad.
 
 Both dates are **approximate**: the mailbox has no clock, so each logged event

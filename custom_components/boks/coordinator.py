@@ -36,9 +36,7 @@ from .const import (
     NOTIFY_UUID,
     OPCODE_ANSWER_DOOR_STATUS,
     OPCODE_INVALID_OPEN_CODE,
-    OPCODE_LOG_CODE_KEY_VALID,
     OPCODE_LOG_END_HISTORY,
-    OPCODE_LOG_NFC_OPENING,
     OPCODE_NOTIFY_DOOR_STATUS,
     OPCODE_VALID_OPEN_CODE,
     OPEN_TIMEOUT,
@@ -53,7 +51,7 @@ from .protocol import (
     REQUEST_LOGS_FRAME,
     build_open_door_frame,
     door_is_open,
-    history_event_age,
+    history_opening,
     parse_frame,
 )
 
@@ -83,7 +81,16 @@ class BoksState:
     #: Dérivées de l'historique de la boîte (âge relatif → date). Approximatives
     #: (la boîte n'a pas d'horloge) et rafraîchies à chaque lecture d'historique.
     last_vigik_open: datetime | None = None
+    last_mifare_open: datetime | None = None
     last_code_open: datetime | None = None
+
+
+#: Catégorie d'ouverture (cf. protocol.history_opening) → attribut de BoksState.
+_OPENING_ATTR: dict[str, str] = {
+    "vigik": "last_vigik_open",
+    "mifare": "last_mifare_open",
+    "code": "last_code_open",
+}
 
 
 class BoksLink:
@@ -649,38 +656,31 @@ class BoksLink:
         _LOGGER.debug("historique: %d trames collectées (drain)", len(events))
 
         now = datetime.now(timezone.utc)
-        latest_vigik: int | None = None  # plus petit âge = plus récent
-        latest_code: int | None = None
+        latest: dict[str, int] = {}  # kind → plus petit âge vu (= plus récent)
         for opcode, payload in events:
-            age = history_event_age(opcode, payload)
-            if age is None:
+            parsed = history_opening(opcode, payload)
+            if parsed is None:
                 continue
-            if opcode == OPCODE_LOG_NFC_OPENING:  # âge non nul ⇒ tagType = VIGIK
-                if latest_vigik is None or age < latest_vigik:
-                    latest_vigik = age
-            elif opcode == OPCODE_LOG_CODE_KEY_VALID:
-                if latest_code is None or age < latest_code:
-                    latest_code = age
+            kind, age = parsed
+            if kind not in latest or age < latest[kind]:
+                latest[kind] = age
 
         # Accumulation : on n'avance une date que si le drain apporte plus récent
         # (le drain ne peut donner que des événements postérieurs au dernier lu,
         # mais on reste robuste vis-à-vis de la valeur persistée).
         changed = False
-        if latest_vigik is not None:
-            date = now - timedelta(seconds=latest_vigik)
-            if self.state.last_vigik_open is None or date > self.state.last_vigik_open:
-                self.state.last_vigik_open = date
-                changed = True
-        if latest_code is not None:
-            date = now - timedelta(seconds=latest_code)
-            if self.state.last_code_open is None or date > self.state.last_code_open:
-                self.state.last_code_open = date
+        for kind, age in latest.items():
+            attr = _OPENING_ATTR[kind]
+            date = now - timedelta(seconds=age)
+            if getattr(self.state, attr) is None or date > getattr(self.state, attr):
+                setattr(self.state, attr, date)
                 changed = True
         if changed:
             _LOGGER.debug(
-                "historique: %d événements, VIGIK=%s code=%s",
+                "historique: %d événements, VIGIK=%s Mifare=%s code=%s",
                 len(events),
                 self.state.last_vigik_open,
+                self.state.last_mifare_open,
                 self.state.last_code_open,
             )
             self._notify_listeners()

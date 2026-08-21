@@ -43,6 +43,7 @@ OPCODE_LOG_NFC_OPENING: Final = 161     # ouverture par badge NFC (VIGIK ou Mifa
 HISTORY_EVENT_OPCODES: Final = frozenset(range(134, 163)) | {OPCODE_NOTIFY_LOGS_COUNT}
 #: `tagType` d'un événement NFC : 0x01 = LaPosteNfc (VIGIK), 0x03 = Mifare associé.
 NFC_TAGTYPE_VIGIK: Final = 0x01
+NFC_TAGTYPE_MIFARE: Final = 0x03
 
 # --- Ouverture à distance --------------------------------------------------
 # Contrairement au reste, ouvrir exige un secret. Il n'y a cependant AUCUN

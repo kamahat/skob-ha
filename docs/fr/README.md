@@ -25,6 +25,7 @@ l'ouverture à distance est optionnelle, voir [Périmètre](#périmètre).
 | Dernière connexion | `sensor` (horodatage) | diagnostic — dit de quand datent les valeurs ci-dessus |
 | Adresse BLE | `sensor` | diagnostic |
 | Dernière ouverture VIGIK | `sensor` (horodatage) | diagnostic — voir [Historique des ouvertures](#historique-des-ouvertures) |
+| Dernière ouverture badge | `sensor` (horodatage) | diagnostic — voir [Historique des ouvertures](#historique-des-ouvertures) |
 | Dernière ouverture code | `sensor` (horodatage) | diagnostic — voir [Historique des ouvertures](#historique-des-ouvertures) |
 | RSSI | `sensor` (dBm) | diagnostic, désactivé par défaut |
 | Firmware / Software | `sensor` | diagnostic, désactivés par défaut |
@@ -260,11 +261,13 @@ si vous l'activez.
 
 ## Historique des ouvertures
 
-Deux capteurs de diagnostic rapportent la plus récente ouverture par chacune
+Trois capteurs de diagnostic rapportent la plus récente ouverture par chacune
 des méthodes propres à la boîte :
 
 - **Dernière ouverture VIGIK** — un badge NFC La Poste (`tagType` `0x01` dans
   le journal d'événements de la boîte).
+- **Dernière ouverture badge** — un badge Mifare « associé » / BoksTAG
+  (`tagType` `0x03`), distinct du VIGIK.
 - **Dernière ouverture code** — un code permanent saisi au clavier physique.
 
 Les deux dates sont **approximatives** : la boîte n'a pas d'horloge, chaque

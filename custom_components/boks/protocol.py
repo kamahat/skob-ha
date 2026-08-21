@@ -10,6 +10,7 @@ import logging
 
 from .const import (
     ALLOWED_TX_OPCODES,
+    NFC_TAGTYPE_MIFARE,
     NFC_TAGTYPE_VIGIK,
     OPCODE_ASK_DOOR_STATUS,
     OPCODE_GET_LOGS_COUNT,
@@ -42,28 +43,36 @@ GET_LOGS_COUNT_FRAME: bytes = build_frame(OPCODE_GET_LOGS_COUNT)
 REQUEST_LOGS_FRAME: bytes = build_frame(OPCODE_REQUEST_LOGS)
 
 
-def history_event_age(opcode: int, payload: bytes) -> int | None:
-    """Âge (en secondes) d'un événement d'historique qui nous intéresse.
+#: Catégories d'ouverture suivies, dans l'ordre de préférence d'affichage.
+OPENING_KINDS: tuple[str, ...] = ("vigik", "mifare", "code")
 
-    Renvoie l'âge pour une **ouverture VIGIK** (NFC, ``tagType`` = LaPosteNfc)
-    ou une **ouverture par code au clavier**, sinon ``None``. Chaque événement
-    commence par ``[age : 3 octets big-endian, secondes]`` — la boîte n'ayant
-    pas d'horloge, la date se dérive par ``maintenant − age``.
+
+def history_opening(opcode: int, payload: bytes) -> tuple[str, int] | None:
+    """``(kind, age_secondes)`` d'un événement d'ouverture suivi, sinon ``None``.
+
+    ``kind`` ∈ :data:`OPENING_KINDS`. Chaque événement commence par
+    ``[age : 3 octets big-endian, secondes]`` — la boîte n'ayant pas d'horloge,
+    la date se dérive par ``maintenant − age``.
 
     Formats (cf. docs/02) :
-    - ``161`` NFC : ``[age:3][tagType:1][uidLen:1][uid]`` — VIGIK si
-      ``tagType == 0x01``.
-    - ``135`` code clavier : ``[age:3][code…]``.
+    - ``161`` NFC : ``[age:3][tagType:1][uidLen:1][uid]`` — ``tagType`` distingue
+      ``vigik`` (``0x01``) de ``mifare`` (``0x03``) ; tout autre type est ignoré.
+    - ``135`` code clavier : ``[age:3][code…]`` → ``code``.
     """
     if len(payload) < 3:
         return None
     age = int.from_bytes(payload[:3], "big")
     if opcode == OPCODE_LOG_NFC_OPENING:
-        if len(payload) >= 4 and payload[3] == NFC_TAGTYPE_VIGIK:
-            return age
+        if len(payload) < 4:
+            return None
+        tagtype = payload[3]
+        if tagtype == NFC_TAGTYPE_VIGIK:
+            return "vigik", age
+        if tagtype == NFC_TAGTYPE_MIFARE:
+            return "mifare", age
         return None
     if opcode == OPCODE_LOG_CODE_KEY_VALID:
-        return age
+        return "code", age
     return None
 
 

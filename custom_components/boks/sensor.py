@@ -37,6 +37,7 @@ async def async_setup_entry(
             BoksLastConnectedSensor(link),
             BoksAddressSensor(link),
             BoksVigikOpenSensor(link),
+            BoksMifareOpenSensor(link),
             BoksCodeOpenSensor(link),
         ]
     )
@@ -220,6 +221,17 @@ class BoksVigikOpenSensor(_BoksOpeningSensor):
     def __init__(self, link: BoksLink) -> None:
         super().__init__(link, "last_vigik_open")
         self._attr_name = "Dernière ouverture VIGIK"
+
+
+class BoksMifareOpenSensor(_BoksOpeningSensor):
+    """Dernière ouverture par badge Mifare « associé » (BoksTAG)."""
+
+    _attr_icon = "mdi:nfc-variant"
+    _restore_attr = "last_mifare_open"
+
+    def __init__(self, link: BoksLink) -> None:
+        super().__init__(link, "last_mifare_open")
+        self._attr_name = "Dernière ouverture badge"
 
 
 class BoksCodeOpenSensor(_BoksOpeningSensor):
