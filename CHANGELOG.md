@@ -4,6 +4,16 @@ All notable changes to this integration are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/), and the project
 follows [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] — 2026-08-21
+
+### Added
+- **Last badge opening** sensor: the most recent opening by an associated
+  Mifare badge / BoksTAG (`tagType` `0x03`), distinct from VIGIK (`0x01`).
+  These events were previously read from the log but silently discarded, so a
+  badge opening moved nothing in Home Assistant; there is now a sensor for it,
+  alongside *Last VIGIK opening* and *Last code opening*. Read-only, same
+  drain semantics as the other history sensors — see the README caveat.
+
 ## [1.0.0] — 2026-08-20
 
 ### Added
@@ -97,6 +107,7 @@ follows [Semantic Versioning](https://semver.org/).
 - Early read-only release: door, battery, BLE link and version sensors over a
   maintained BLE connection, with Bluetooth discovery.
 
+[1.1.0]: https://github.com/kamahat/skob-ha/releases/tag/v1.1.0
 [1.0.0]: https://github.com/kamahat/skob-ha/releases/tag/v1.0.0
 [0.3.0]: https://github.com/kamahat/skob-ha/releases/tag/v0.3.0
 [0.2.0]: https://github.com/kamahat/skob-ha/releases/tag/v0.2.0
