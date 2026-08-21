@@ -175,8 +175,41 @@ faut du désassemblage fonctionnel du chemin de commande boîte (Xtensa sans
 symboles — lent). L'appairage **écrit un bond dans la boîte** (réversible ;
 n'affecte ni codes ni Master Key).
 
-**Décision : écriture NFC toujours parquée**, prochaine étape = le **test
-d'appairage explicite** (empirique, décisif sur l'hypothèse 1), sur accord.
+### Test d'appairage explicite (2026-08-21) — négatif, et il tranche
+
+Appairage tenté depuis le Pi4 (`bluetoothctl`, agent Just Works) : la boîte est
+**atteinte et connectée** (nom `CD05E365D67`) mais l'appairage **échoue** —
+`auth failed status 0x05 (Authentication Failed)`, `Paired: no / Bonded: no`. La
+boîte **refuse le Just Works** (elle voudrait un appairage *authentifié* /
+passkey qu'on ne sait pas fournir).
+
+Recoupé avec une **re-inspection ciblée du NVS du dongle** : **aucun
+enregistrement de bond NimBLE** (`our_sec`/`peer_sec`/`peer_dev_rec` absents ;
+les « CSRK/IRK/NIMBLE » repérés étaient des sous-chaînes fortuites dans des clés
+WiFi aléatoires). **Le dongle ne stocke donc pas de bond avec la boîte** → il ne
+bonde pas non plus. **Le bonding n'est pas le mécanisme d'auth admin.**
+
+### Conclusion honnête de l'investigation
+
+Après un tour complet — Config Key (valeur correcte, confirmée cloud), encodage
+(correct), proxy vs noble (les deux `225`), SRP (fausse piste = provisioning),
+canal boîte (en clair), bonding (boîte refuse l'appairage, dongle sans bond) —
+**l'auth des opcodes d'admin `22-25` n'est pas reproductible avec ce qu'on
+détient**, et **n'est ni du chiffrement applicatif ni du bonding BLE**. Deux
+lectures restantes, toutes deux hors de portée immédiate :
+
+1. Le dongle attache aux commandes d'admin un **credential** qu'on n'a pas encore
+   isolé (nécessiterait du **désassemblage fonctionnel** du chemin de commande
+   boîte — Xtensa sans symboles, lent et incertain).
+2. L'enregistrement de tag est **côté usine / cloud**, le dongle ne faisant que
+   **relayer les événements** (`NFC_TAG_REGISTERING_SCAN` reçu comme *log*, pas
+   émis comme commande) — auquel cas il n'existe **pas** de voie BLE propriétaire.
+
+**Décision : écriture NFC (register/unregister) et activation VIGIK PARQUÉES,
+sans voie locale connue à ce jour.** Le volet **lecture** reste livré et couvre le
+besoin quotidien (détection d'usage). Réouverture possible seulement via (a)
+désassemblage fonctionnel approfondi, ou (b) capture MITM d'un provisioning réel
+de tag (commander un tag et observer), ou (c) l'API cloud (à rebours du local).
 - **Palier 1 — badge de test jetable.** Enregistrer un badge Mifare neuf
   (`24` → `200`), vérifier physiquement qu'il ouvre la boîte, puis le révoquer
   (`25` → `202`), vérifier qu'il n'ouvre plus. Jamais sur un badge en service.
