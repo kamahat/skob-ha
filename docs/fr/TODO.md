@@ -37,9 +37,13 @@ développée et testée sur du vrai matériel. D'autres générations peuvent
 néanmoins différer : la fonction devra détecter la capacité plutôt que la
 supposer.
 
-**État.** Non commencé. Document de conception d'abord (gestion du secret, échec
-à mi-parcours, détection de capacité), comme convenu pour toute fonction
-d'écriture. Testable de bout en bout sur la boîte de référence une fois codé.
+**État.** Conception rédigée — voir
+[docs/design/nfc-register.md](../design/nfc-register.md). Le format des trames
+`23/24/25` est établi par lecture du SDK (dépôt privé `skob`, doc 02) ; le
+capteur de **lecture** « Dernière ouverture badge » est déjà livré (v1.1.0).
+Reste, côté écriture : trancher les décisions ouvertes de la conception
+(surface, plan de validation, gating), puis suivre le plan de validation par
+paliers (non destructif d'abord) sur la boîte via le bastion avant activation.
 
 ---
 

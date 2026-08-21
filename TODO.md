@@ -36,9 +36,13 @@ not preclude it here, and the feature can be developed and tested against real
 hardware. Other hardware generations may still differ, so the feature should
 detect capability rather than assume it.
 
-**Status.** Not started. Design document first (credential handling,
-mid-operation failure, capability detection), as agreed for any write feature.
-Testable end-to-end on the reference box once built.
+**Status.** Design written — see
+[docs/design/nfc-register.md](docs/design/nfc-register.md). The `23/24/25` frame
+format is established from the SDK (private repo `skob`, doc 02), and the **read**
+side — the *Last badge opening* sensor — already shipped (v1.1.0). Still to do on
+the write side: settle the design's open decisions (surface, validation plan,
+gating), then follow the staged validation plan (non-destructive first) against
+the box via the bastion before enabling.
 
 ---
 
