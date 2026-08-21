@@ -84,12 +84,20 @@ officiel en était peut-être le seul émetteur en pratique. On valide **par
 paliers**, du non destructif vers le destructif, via le bastion, chaque palier
 devant réussir avant le suivant :
 
-- **Palier 0 — aucun changement d'état.** Envoyer `SCAN_START (23)` avec la
-  Config Key, puis présenter un **badge DÉJÀ enregistré**. Attendu : `197 FOUND`
-  ou `198 ALREADY_EXISTS`. Ce palier prouve, sans rien ajouter ni retirer :
-  (a) la boîte honore l'opcode 23 ; (b) notre encodage ASCII de la Config Key
-  est accepté (sinon `225 UNAUTHORIZED`) ; (c) on sait parser le retour.
-  **Si 23 est rejeté → stop : la fonction est sans objet sur ce matériel.**
+- **Palier 0a — clé bidon, aucun badge. ✅ FAIT (2026-08-21).** Envoyer
+  `SCAN_START (23)` avec une Config Key **volontairement invalide** (`AABBCCDD`),
+  sans présenter de badge. **Résultat : la boîte répond `225 ERROR_UNAUTHORIZED`**
+  (`e1 00 e1`). Cela prouve, sans aucun secret ni changement d'état : la boîte
+  **honore l'opcode 23**, **valide la Config Key en amont**, **comprend notre
+  encodage de trame** (sinon `224`/`226`), et la fonction **n'est pas réservée au
+  dongle** (réponse obtenue sur une connexion proxy en clair, non appairée). La
+  faisabilité est établie. Harnais : `boks-esphome-test/palier0_scanstart.py` sur
+  le bastion (n'émet QUE l'opcode 23).
+- **Palier 0b — vraie clé, badge déjà enregistré.** Envoyer `SCAN_START (23)`
+  avec la **vraie** Config Key, puis présenter un **badge DÉJÀ enregistré**.
+  Attendu : `197 FOUND` ou `198 ALREADY_EXISTS` (au lieu du `225` du 0a). Confirme
+  le chemin nominal et l'encodage ASCII de la vraie clé. Toujours aucun ajout ni
+  retrait (on n'émet jamais `24`).
 - **Palier 1 — badge de test jetable.** Enregistrer un badge Mifare neuf
   (`24` → `200`), vérifier physiquement qu'il ouvre la boîte, puis le révoquer
   (`25` → `202`), vérifier qu'il n'ouvre plus. Jamais sur un badge en service.
