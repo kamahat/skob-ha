@@ -110,11 +110,14 @@ DEFAULT_CONFIG_KEY_SECRET: Final = "!secret boks_config_key"
 #: compte. Elle doit donc être saisie, et sert à distinguer plusieurs boîtes.
 CONF_LABEL: Final = "label"
 
+#: v1, conservé UNIQUEMENT pour la migration (cf. async_migrate_entry dans
+#: __init__.py) : une entrée déjà migrée ne relit plus jamais cette clé.
 CONF_OPEN_CODE: Final = "open_code"
-#: Le champ accepte aussi une référence vers ``secrets.yaml``, avec la syntaxe
-#: que les utilisateurs connaissent déjà. Home Assistant ne résout pas
-#: ``!secret`` dans les entrées de configuration : on le fait nous-mêmes
-#: (cf. secret.py), pour que le code n'ait pas à être recopié dans .storage.
+#: Le champ v1 acceptait aussi une référence vers ``secrets.yaml``, avec la
+#: syntaxe que les utilisateurs connaissent déjà — reniflée par préfixe.
+#: Home Assistant ne résout pas ``!secret`` dans les entrées de
+#: configuration : on le fait nous-mêmes (cf. secret.py). Gardé pour la
+#: migration ; le v2 n'a plus besoin de reniflage, le mode le dit directement.
 SECRET_PREFIX: Final = "!secret "
 #: Les PIN Boks s'écrivent sur douze symboles seulement — pas de C à F.
 PIN_ALPHABET: Final = "0123456789AB"
@@ -123,12 +126,31 @@ PIN_LENGTH: Final = 6
 #: établir la connexion.
 OPEN_TIMEOUT: Final = 30.0
 
+# --- Code d'ouverture v2 (cf. TODO.md #5) -----------------------------------
+# Remplace CONF_OPEN_CODE par un choix explicite au lieu d'une chaîne dont le
+# sens dépend de ce par quoi elle commence. `direct`/`secret`/`none` se
+# résolvent une fois au démarrage, exactement comme avant ; `otp` est
+# différent par nature — voir otp_store.py — puisqu'un code à usage unique
+# ne peut pas être résolu une bonne fois pour toutes.
+CONF_OPEN_CODE_MODE: Final = "open_code_mode"
+CONF_OPEN_CODE_VALUE: Final = "open_code_value"
+OPEN_CODE_MODE_NONE: Final = "none"
+OPEN_CODE_MODE_DIRECT: Final = "direct"
+OPEN_CODE_MODE_SECRET: Final = "secret"
+OPEN_CODE_MODE_OTP: Final = "otp"
+OPEN_CODE_MODES: Final = (
+    OPEN_CODE_MODE_NONE,
+    OPEN_CODE_MODE_DIRECT,
+    OPEN_CODE_MODE_SECRET,
+    OPEN_CODE_MODE_OTP,
+)
+
 # Périmètre du constructeur de trames **générique** (`build_frame`) : lecture +
-# ouverture. Il refuse tout autre opcode par construction. Les opérations d'admin
-# NFC/VIGIK (22-25) NE passent PAS par lui : elles ont des constructeurs dédiés
-# (`build_scan_start_frame`…), appelés uniquement par le coordinateur **quand une
-# Config Key est configurée**. Gestion de codes (16-19) et provisioning (32-33)
-# restent, eux, hors d'atteinte.
+# ouverture + reboot. Il refuse tout autre opcode par construction. Les
+# opérations d'admin NFC/VIGIK (22-25) NE passent PAS par lui : elles ont des
+# constructeurs dédiés (`build_scan_start_frame`…), appelés uniquement par le
+# coordinateur **quand une Config Key est configurée**. Gestion de codes
+# (16-19) et provisioning (32-33) restent, eux, hors d'atteinte.
 ALLOWED_TX_OPCODES: Final = frozenset(
     {
         OPCODE_ASK_DOOR_STATUS,

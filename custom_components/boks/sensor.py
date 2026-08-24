@@ -27,6 +27,8 @@ async def async_setup_entry(
     entities: list[SensorEntity] = []
     if link.label:
         entities.append(BoksLabelSensor(link))
+    if link.otp_remaining is not None:
+        entities.append(BoksOtpRemainingSensor(link))
     async_add_entities(
         entities
         + [
@@ -187,6 +189,32 @@ class BoksLabelSensor(BoksEntity, SensorEntity):
     @property
     def native_value(self) -> str | None:
         return self._link.label
+
+
+class BoksOtpRemainingSensor(BoksEntity, SensorEntity):
+    """Codes OTP restants dans le pool (mode ``otp`` uniquement).
+
+    Sans ce capteur, le pool s'épuise en silence jusqu'au premier échec
+    surprise d'ouverture (« plus de code OTP disponible »). N'est créé que
+    si le mode courant est ``otp`` — voir ``async_setup_entry`` ci-dessus.
+    """
+
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:key-chain"
+
+    def __init__(self, link: BoksLink) -> None:
+        super().__init__(link, "otp_remaining")
+        self._attr_name = "Codes OTP restants"
+
+    @property
+    def available(self) -> bool:
+        """Valeur locale (pool), pas dépendante d'une connexion à la boîte."""
+        return True
+
+    @property
+    def native_value(self) -> int | None:
+        return self._link.otp_remaining
 
 
 class _BoksOpeningSensor(BoksEntity, SensorEntity, RestoreIntoState):

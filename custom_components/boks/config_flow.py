@@ -28,13 +28,18 @@ from .const import (
     CONF_KEEPALIVE,
     DEFAULT_CONFIG_KEY_SECRET,
     CONF_LABEL,
-    CONF_OPEN_CODE,
+    CONF_OPEN_CODE_MODE,
+    CONF_OPEN_CODE_VALUE,
     CONF_RECONNECT_MAX,
     CONF_REFRESH_INTERVAL,
     DOMAIN,
     KEEPALIVE_INTERVAL,
     KEEPALIVE_MAX,
     KEEPALIVE_MIN,
+    OPEN_CODE_MODE_DIRECT,
+    OPEN_CODE_MODE_NONE,
+    OPEN_CODE_MODE_OTP,
+    OPEN_CODE_MODE_SECRET,
     RECONNECT_DELAY_MAX,
     RECONNECT_MAX_MAX,
     RECONNECT_MAX_MIN,
@@ -43,8 +48,9 @@ from .const import (
     REFRESH_INTERVAL_MIN,
     SERVICE_UUID,
 )
+from .otp_store import OtpPool
 from .protocol import normalize_config_key, normalize_pin
-from .secret import SecretError, async_resolve, is_secret_ref
+from .secret import SecretError, async_resolve, async_resolve_mode, is_secret_ref
 
 
 def _title(address: str, name: str | None) -> str:
@@ -54,7 +60,7 @@ def _title(address: str, name: str | None) -> str:
 class BoksConfigFlow(ConfigFlow, domain=DOMAIN):
     """Ajout d'une Boks."""
 
-    VERSION = 1
+    VERSION = 2
 
     @staticmethod
     @callback
@@ -137,6 +143,12 @@ class BoksConfigFlow(ConfigFlow, domain=DOMAIN):
 class BoksOptionsFlow(OptionsFlow):
     """Réglages de la liaison, modifiables sans redémarrer Home Assistant.
 
+    Deux étapes : ``init`` couvre les réglages généraux plus le *choix* du
+    mode de code d'ouverture ; ``open_code`` ne s'affiche que si ce mode
+    n'est pas ``none``, et ne montre qu'un seul champ dont le type et le
+    libellé suivent le mode choisi. Séparer les deux évite un champ qui ne
+    veut rien dire tant qu'aucun mode n'est sélectionné.
+
     Valider ce formulaire déclenche le rechargement de l'entrée (via
     ``add_update_listener``) : la liaison est reconstruite avec les nouvelles
     valeurs, sans toucher au reste de l'installation.
@@ -147,39 +159,23 @@ class BoksOptionsFlow(OptionsFlow):
     nécessaire.
     """
 
+    def __init__(self) -> None:
+        super().__init__()
+        #: Données validées à l'étape ``init``, complétées par ``open_code``
+        #: avant la création finale de l'entrée.
+        self._pending: dict[str, Any] = {}
+
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Formulaire unique."""
+        """Réglages généraux, Config Key, et choix du mode de code d'ouverture."""
         errors: dict[str, str] = {}
         if user_input is not None:
             user_input[CONF_LABEL] = (user_input.get(CONF_LABEL) or "").strip()
-            code = (user_input.get(CONF_OPEN_CODE) or "").strip()
-            if not code:
-                user_input[CONF_OPEN_CODE] = ""
-            elif is_secret_ref(code):
-                # Référence vers secrets.yaml : on vérifie dès maintenant que la
-                # clé existe et contient un code valide, sinon l'erreur ne se
-                # révélerait qu'au premier appui sur le bouton. La valeur n'est
-                # jamais réaffichée ni stockée — seule la référence l'est.
-                try:
-                    normalize_pin(await async_resolve(self.hass, code))
-                except SecretError:
-                    errors[CONF_OPEN_CODE] = "unknown_secret"
-                except ValueError:
-                    errors[CONF_OPEN_CODE] = "invalid_open_code"
-                else:
-                    user_input[CONF_OPEN_CODE] = code
-            else:
-                # Valider ici plutôt qu'à l'appui : un code au mauvais format
-                # produit une trame que la boîte peut ignorer *sans répondre*,
-                # ce qui se diagnostique très mal une fois en service.
-                try:
-                    user_input[CONF_OPEN_CODE] = normalize_pin(code)
-                except ValueError:
-                    errors[CONF_OPEN_CODE] = "invalid_open_code"
-            # Config Key : même logique (secrets.yaml ou valeur directe). Absente
-            # = pas de capacité d'admin NFC/VIGIK exposée.
+            # Config Key : secrets.yaml ou valeur directe. Absente = pas de
+            # capacité d'admin NFC/VIGIK exposée. Inchangé par le passage du
+            # code d'ouverture en mode/valeur explicite (TODO.md #5) — les
+            # deux champs sont indépendants.
             ckey = (user_input.get(CONF_CONFIG_KEY) or "").strip()
             if not ckey:
                 user_input[CONF_CONFIG_KEY] = ""
@@ -197,8 +193,13 @@ class BoksOptionsFlow(OptionsFlow):
                     user_input[CONF_CONFIG_KEY] = normalize_config_key(ckey)
                 except ValueError:
                     errors[CONF_CONFIG_KEY] = "invalid_config_key"
+
             if not errors:
-                return self.async_create_entry(data=user_input)
+                self._pending = user_input
+                if user_input[CONF_OPEN_CODE_MODE] == OPEN_CODE_MODE_NONE:
+                    self._pending[CONF_OPEN_CODE_VALUE] = ""
+                    return self.async_create_entry(data=self._pending)
+                return await self.async_step_open_code()
 
         options = self.config_entry.options
         return self.async_show_form(
@@ -233,12 +234,19 @@ class BoksOptionsFlow(OptionsFlow):
                             mode=selector.NumberSelectorMode.SLIDER,
                         )
                     ),
-                    vol.Optional(
-                        CONF_OPEN_CODE,
-                        default=options.get(CONF_OPEN_CODE, ""),
-                    ): selector.TextSelector(
-                        selector.TextSelectorConfig(
-                            type=selector.TextSelectorType.PASSWORD
+                    vol.Required(
+                        CONF_OPEN_CODE_MODE,
+                        default=options.get(CONF_OPEN_CODE_MODE, OPEN_CODE_MODE_NONE),
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                OPEN_CODE_MODE_NONE,
+                                OPEN_CODE_MODE_DIRECT,
+                                OPEN_CODE_MODE_SECRET,
+                                OPEN_CODE_MODE_OTP,
+                            ],
+                            translation_key="open_code_mode",
+                            mode=selector.SelectSelectorMode.DROPDOWN,
                         )
                     ),
                     vol.Optional(
@@ -271,5 +279,89 @@ class BoksOptionsFlow(OptionsFlow):
                     ),
                 }
             ),
+            errors=errors,
+        )
+
+    async def async_step_open_code(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Second écran : un seul champ, dont le sens dépend du mode choisi.
+
+        ``direct``/``secret`` se comportent comme le champ unique v1 : validés
+        et stockés tels quels dans les options (masqués, comme avant).
+
+        ``otp`` est différent par construction : le champ ne porte que les
+        codes à *ajouter*, jamais le pool lui-même — il est analysé, validé,
+        puis ajouté directement au ``OtpPool`` ici même. Ce qui finit dans
+        les options pour ce mode est toujours une valeur vide : le pool vit
+        dans son propre stockage (cf. otp_store.py), pas dans
+        ``config_entry.options``, qui représente la config voulue, pas
+        l'état d'exécution.
+        """
+        errors: dict[str, str] = {}
+        mode = self._pending[CONF_OPEN_CODE_MODE]
+
+        if user_input is not None:
+            raw = (user_input.get(CONF_OPEN_CODE_VALUE) or "").strip()
+
+            if mode == OPEN_CODE_MODE_SECRET:
+                # Vérifié dès maintenant que la clé existe et contient un code
+                # valide, sinon l'erreur ne se révélerait qu'au premier appui
+                # sur le bouton. La valeur n'est jamais réaffichée — seule la
+                # référence (le nom de clé) l'est.
+                try:
+                    normalize_pin(
+                        await async_resolve_mode(self.hass, OPEN_CODE_MODE_SECRET, raw)
+                    )
+                except SecretError:
+                    errors[CONF_OPEN_CODE_VALUE] = "unknown_secret"
+                except ValueError:
+                    errors[CONF_OPEN_CODE_VALUE] = "invalid_open_code"
+
+            elif mode == OPEN_CODE_MODE_DIRECT:
+                try:
+                    raw = normalize_pin(raw)
+                except ValueError:
+                    errors[CONF_OPEN_CODE_VALUE] = "invalid_open_code"
+
+            elif mode == OPEN_CODE_MODE_OTP:
+                if not raw:
+                    errors[CONF_OPEN_CODE_VALUE] = "no_codes_entered"
+                else:
+                    pool = OtpPool(self.hass, self.config_entry.entry_id)
+                    await pool.async_load()
+                    try:
+                        added = await pool.async_add(raw)
+                    except ValueError:
+                        errors[CONF_OPEN_CODE_VALUE] = "invalid_open_code"
+                    else:
+                        if added == 0:
+                            # Tous doublons d'un pool déjà chargé : pas une
+                            # erreur bloquante, juste rien de neuf à ajouter.
+                            pass
+                        raw = ""  # jamais stocké dans les options, voir docstring
+
+            if not errors:
+                self._pending[CONF_OPEN_CODE_VALUE] = raw
+                return self.async_create_entry(data=self._pending)
+
+        is_secret_field = mode in (OPEN_CODE_MODE_DIRECT, OPEN_CODE_MODE_SECRET)
+        return self.async_show_form(
+            step_id="open_code",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(CONF_OPEN_CODE_VALUE, default=""): selector.TextSelector(
+                        selector.TextSelectorConfig(
+                            type=(
+                                selector.TextSelectorType.PASSWORD
+                                if is_secret_field
+                                else selector.TextSelectorType.TEXT
+                            ),
+                            multiline=(mode == OPEN_CODE_MODE_OTP),
+                        )
+                    ),
+                }
+            ),
+            description_placeholders={"mode": mode},
             errors=errors,
         )
