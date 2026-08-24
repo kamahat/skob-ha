@@ -1,10 +1,29 @@
 # Conception — enregistrement / révocation de badges NFC
 
-> **Statut : conception, non implémenté.** Ce document précède le code, comme
-> convenu pour toute fonction d'**écriture**. Rien n'est envoyé à la boîte tant
-> que le plan de validation (§5) n'a pas été suivi. Le format des trames est
-> établi (dépôt privé `skob`, `docs/02-protocole-ble.md`, § *Enregistrement d'un
-> badge NFC*) mais **pas encore vérifié sur cette boîte**.
+> **Statut : RÉSOLU et IMPLÉMENTÉ (v1.2.0, 2026-08-24).** Register / unregister
+> Mifare et activation VIGIK sont en place dans l'intégration, derrière la Config
+> Key. Le long blocage sur `225 UNAUTHORIZED` (voir la trace d'enquête plus bas,
+> conservée pour mémoire) n'était **ni une auth manquante, ni du bonding, ni du
+> chiffrement** : c'était un **mauvais format de trame** hérité du SDK
+> communautaire. Reste à confirmer l'enrôlement de bout en bout sur matériel
+> (`SCAN_START → 199` déjà confirmé = Config Key acceptée).
+>
+> ## RÉSOLU — le `225` était un octet parasite
+>
+> Toutes nos trames d'admin étaient bâties sur le SDK **`@thib3113/boks-sdk`**
+> (reverse communautaire). Pour `SCAN_START`, ce SDK produit
+> `[23, 9, 0x00, …ASCII(clé), checksum]` : le **`0x00` de tête décale la Config
+> Key d'un octet** → la boîte lit une clé fausse → `225`. C'est pour ça que la
+> valeur (correcte) et l'encodage ASCII (correct) « ne suffisaient pas ».
+>
+> Le **format officiel**, reversé de l'app `com.boks.app` (Cordova, `main.js`,
+> `writeStartNfcTagScanRegistering` + `T()` = encodage ASCII pur), n'a **ni `0x00`
+> ni checksum** pour `SCAN_START`. Confirmé sur la boîte : `SCAN_START` au bon
+> format → **`199 SCAN_TIMEOUT`** (clé acceptée, scan démarré) au lieu de `225`.
+> Formats corrects → voir dépôt privé `skob`, `docs/02-protocole-ble.md`.
+>
+> Conséquence : ni sniffer nRF52840 ni capture MITM n'ont finalement été
+> nécessaires — l'analyse de l'APK a tout donné.
 
 ## 1. Objectif et périmètre
 
@@ -45,24 +64,29 @@ sur la boîte. C'est un cran au-dessus de « peut ouvrir ».
   pas de service exposé = allowlist inchangée. L'absence de secret vaut absence
   de capacité.
 
-## 3. Rappel du protocole (format établi)
+## 3. Rappel du protocole — formats CORRECTS (reversés de l'app officielle)
 
-Trame `[opcode][len][payload][checksum]`, `checksum = (opcode+len+payload) & 0xFF`.
 Config Key transmise en **ASCII (8 octets)** ; UID **préfixé par sa longueur**.
+⚠️ Ne PAS ajouter de `0x00` de tête ni recalculer un checksum « somme » : c'est
+exactement l'erreur du SDK communautaire qui causait le `225`. Les trames exactes
+(octet par octet) sont dans `skob/docs/02` et `custom_components/boks/protocol.py`.
 
 ```
 Enregistrer :
-  HOST → SCAN_START (23)         payload [00][configKey:8]
-  [ badge présenté au clavier ]
-  boîte → NFC_TAG_FOUND (197)    payload [uidLen][uid]        (l'UID à inscrire)
-        | ERROR_NFC_SCAN_TIMEOUT (199)  — personne n'a présenté de badge
+  HOST → SCAN_START (23)         [23, 8, …ASCII(clé)]           (ni 0x00 ni checksum)
+  [ touche clavier puis badge présenté ]
+  boîte → NFC_TAG_FOUND (197)    [uidLen][uid]                  (l'UID à inscrire)
+        | ERROR_NFC_SCAN_TIMEOUT (199)  — aucun badge présenté à temps
         | ERROR_NFC_TAG_ALREADY_EXISTS_SCAN (198)  — déjà connu
-  HOST → REGISTER_NFC_TAG (24)   payload [configKey:8][uidLen][uid]
+  HOST → REGISTER_NFC_TAG (24)   [24, 9+U, …ASCII(clé), U, …uid, 24]
   boîte → NFC_TAG_REGISTERED (200)  | ...ERROR_ALREADY_EXISTS (201)
 
 Révoquer :
-  HOST → UNREGISTER_NFC_TAG (25) payload [configKey:8][uidLen][uid]
+  HOST → UNREGISTER_NFC_TAG (25) [25, 9+U, …ASCII(clé), U, …uid, 25]
   boîte → NFC_TAG_UNREGISTERED (202)
+
+VIGIK :
+  HOST → SET_CONFIGURATION (22)  [22, 10, …ASCII(clé), type=1, flag, (22+type+flag)&0xFF]
 ```
 
 ## 4. Détection de capacité
@@ -189,27 +213,22 @@ les « CSRK/IRK/NIMBLE » repérés étaient des sous-chaînes fortuites dans de
 WiFi aléatoires). **Le dongle ne stocke donc pas de bond avec la boîte** → il ne
 bonde pas non plus. **Le bonding n'est pas le mécanisme d'auth admin.**
 
-### Conclusion honnête de l'investigation
+### Conclusion de l'investigation — dépassée (voir en tête : RÉSOLU)
 
-Après un tour complet — Config Key (valeur correcte, confirmée cloud), encodage
-(correct), proxy vs noble (les deux `225`), SRP (fausse piste = provisioning),
-canal boîte (en clair), bonding (boîte refuse l'appairage, dongle sans bond) —
-**l'auth des opcodes d'admin `22-25` n'est pas reproductible avec ce qu'on
-détient**, et **n'est ni du chiffrement applicatif ni du bonding BLE**. Deux
-lectures restantes, toutes deux hors de portée immédiate :
+> ⚠️ La « conclusion » ci-dessous concluait à tort que l'admin n'était **pas
+> reproductible** (credential dongle, provisioning usine…). **C'était faux** : la
+> cause était un **mauvais format de trame** (le `0x00` parasite du SDK). Voir le
+> bloc **RÉSOLU** en tête du document. Le texte est conservé pour la trace de
+> l'enquête (les pistes SRP / bonding / usine ont bien été écartées, mais la vraie
+> cause n'était aucune d'elles).
 
-1. Le dongle attache aux commandes d'admin un **credential** qu'on n'a pas encore
-   isolé (nécessiterait du **désassemblage fonctionnel** du chemin de commande
-   boîte — Xtensa sans symboles, lent et incertain).
-2. L'enregistrement de tag est **côté usine / cloud**, le dongle ne faisant que
-   **relayer les événements** (`NFC_TAG_REGISTERING_SCAN` reçu comme *log*, pas
-   émis comme commande) — auquel cas il n'existe **pas** de voie BLE propriétaire.
-
-**Décision : écriture NFC (register/unregister) et activation VIGIK PARQUÉES,
-sans voie locale connue à ce jour.** Le volet **lecture** reste livré et couvre le
-besoin quotidien (détection d'usage). Réouverture possible seulement via (a)
-désassemblage fonctionnel approfondi, ou (b) capture MITM d'un provisioning réel
-de tag (commander un tag et observer), ou (c) l'API cloud (à rebours du local).
+Trace (obsolète) : après un tour complet — Config Key (valeur correcte, confirmée
+cloud), encodage (correct), proxy vs noble (les deux `225`), SRP (fausse piste =
+provisioning), canal boîte (en clair), bonding (boîte refuse l'appairage, dongle
+sans bond) — on avait conclu que l'auth d'admin « n'était pas reproductible ». La
+pièce manquante n'était pas une auth mais le **format de trame** : dès qu'on a
+retiré le `0x00` de tête (format de l'app officielle), `SCAN_START` est passé
+(`199`). **Implémenté en v1.2.0.**
 - **Palier 1 — badge de test jetable.** Enregistrer un badge Mifare neuf
   (`24` → `200`), vérifier physiquement qu'il ouvre la boîte, puis le révoquer
   (`25` → `202`), vérifier qu'il n'ouvre plus. Jamais sur un badge en service.
@@ -285,8 +304,15 @@ Derrière la Config Key. Paliers §5 sur la vraie boîte via le bastion **avant*
 toute annonce. Bump de version à la livraison, entrée CHANGELOG mentionnant
 l'élargissement de périmètre.
 
-## Décisions ouvertes (à trancher avant implémentation)
+## Décisions prises (implémentées en v1.2.0)
 
-1. **Surface** : services (recommandé) vs entités ?
-2. **Plan de validation** : on commence par le palier 0 (non destructif) ?
-3. **Gating** : uniquement sur présence de la Config Key (recommandé) ?
+1. **Surface** : **entités** — boutons *Enrôler un badge* / *Révoquer le badge*,
+   champ texte *UID à révoquer*, switch *VIGIK*. Toutes gatées sur la Config Key.
+2. **Gating** : uniquement sur présence de la Config Key (option
+   `!secret boks_config_key` par défaut). Sans clé, aucune de ces entités
+   n'existe et l'allowlist générique reste inchangée.
+3. **Formats** : reversés octet par octet de l'app officielle (pas du SDK), avec
+   builders dédiés hors `build_frame`. Voir `skob/docs/02` et `protocol.py`.
+
+**Reste** : test d'enrôlement de bout en bout sur matériel (`SCAN_START → 199`
+déjà confirmé), puis release taguée.

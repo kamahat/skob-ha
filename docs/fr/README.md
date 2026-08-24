@@ -17,6 +17,10 @@ l'ouverture à distance est optionnelle, voir [Périmètre](#périmètre).
 |---|---|---|
 | Porte | `binary_sensor` (`door`) | poussée par la boîte à chaque changement |
 | Ouvrir | `button` | **seulement si un code d'ouverture est configuré** — voir [Ouvrir la porte](#ouvrir-la-porte) |
+| Enrôler un badge | `button` | **seulement si une Config Key est configurée** — voir [Administration NFC](#administration-nfc) |
+| Révoquer le badge | `button` | **seulement si une Config Key est configurée** — révoque l'UID du champ ci-dessous |
+| UID à révoquer | `text` | **seulement si une Config Key est configurée** — l'UID du badge pour *Révoquer* |
+| VIGIK | `switch` | **seulement si une Config Key est configurée** — active l'accès La Poste / VIGIK |
 | Batterie | `sensor` (%) | poussée sur changement, lue à la connexion |
 | Piles à remplacer | `binary_sensor` (`battery`) | diagnostic — **à utiliser plutôt que le pourcentage** ([pourquoi](#batterie--alcalines-ou-cellules-régulées)) |
 | Connexion maintenue | `switch` | configuration — voir [Maintenir le lien](#maintenir-le-lien) |
@@ -46,18 +50,24 @@ Aucun identifiant du propriétaire n'est requis ni utilisé, et aucune entité
 
 **L'ouverture s'active volontairement.** Si — et seulement si — vous renseignez
 un code d'ouverture dans les options, un bouton **Ouvrir** apparaît et
-l'intégration peut en plus émettre `OPEN_DOOR`. Rien d'autre ne devient
-possible pour autant : le constructeur de trames *refuse* tout autre opcode par
-construction, de sorte que la gestion de codes (16-19), les changements de
-configuration (22) et le provisioning (32-33) restent hors d'atteinte — pas
-seulement inutilisés.
+l'intégration peut en plus émettre `OPEN_DOOR`. Le constructeur de trames
+générique *refuse* toujours tout autre opcode par construction : la gestion de
+codes (16-19) et le provisioning (32-33) restent hors d'atteinte.
 
-> Renseigner un code signifie que **quiconque a accès à votre Home Assistant
-> peut ouvrir votre boîte aux lettres**. Le code est stocké dans l'entrée de
-> configuration, en clair comme tout identifiant Home Assistant. Laissez le
-> champ vide pour garder l'intégration strictement en lecture.
+**L'administration NFC s'active aussi volontairement.** Si — et seulement si —
+vous renseignez votre **Config Key** dans les options, quatre entités d'admin
+apparaissent (enrôler / révoquer un badge Mifare, un champ UID, un switch VIGIK)
+et l'intégration peut émettre les trames `22`/`23`/`24`/`25` correspondantes.
+Sans Config Key, rien de tout cela n'existe. Voir
+[Administration NFC](#administration-nfc).
 
-Voir [Ouvrir la porte](#ouvrir-la-porte).
+> Renseigner un code d'ouverture signifie que **quiconque a accès à votre Home
+> Assistant peut ouvrir votre boîte** ; renseigner une Config Key signifie qu'il
+> peut aussi **inscrire son propre badge**. Les deux sont stockés en clair dans
+> l'entrée de configuration comme tout identifiant HA — utilisez des références
+> `!secret`. Laissez les deux champs vides pour rester strictement en lecture.
+
+Voir [Ouvrir la porte](#ouvrir-la-porte) et [Administration NFC](#administration-nfc).
 
 ## Prérequis
 
@@ -245,27 +255,44 @@ L'appui n'est réputé réussi qu'une fois la réponse `VALID_OPEN_CODE` reçue.
 écriture GATT ne prouve rien à elle seule : un code refusé et une commande non
 entendue se ressembleraient exactement.
 
-## Autres méthodes d'ouverture (Mifare, Vigik)
+## Administration NFC
 
-La boîte peut aussi être ouverte avec un **badge NFC Mifare** ou un badge
-d'accès **Vigik**, indépendamment de Home Assistant — tous deux sont lus par
-le clavier/lecteur NFC de la boîte elle-même et gérés via l'application ou le
-compte du fabricant, pas via cette intégration.
+La boîte s'ouvre avec un **badge NFC Mifare** ou un badge **Vigik** à son propre
+clavier/lecteur NFC, indépendamment de Home Assistant. L'usage d'un badge
+n'apparaît ici qu'indirectement, via l'[historique des ouvertures](#historique-des-ouvertures).
 
-**Cette intégration ne lit, n'enregistre ni ne révoque de badge d'aucun des
-deux types, et elle ne crée ni ne gère de code permanent non plus** — le
-code utilisé ci-dessus doit déjà exister sur votre compte. Gérer des badges
-ou des codes nécessite la Config Key du propriétaire et un accès en écriture
-à la boîte, une étape volontairement plus large que le modèle
-lecture-seule-par-défaut suivi ici aujourd'hui. C'est sur la feuille de
-route — voir [TODO.md § Badge NFC Mifare](TODO.md#1-badge-nfc-mifare) et
-[TODO.md § Badge Vigik](TODO.md#2-badge-vigik) pour le détail du protocole
-et ce qui bloque encore.
+**Gérer ces badges depuis Home Assistant est volontaire et conditionné à la
+Config Key.** Renseignez votre **Config Key** dans les options (le champ propose
+par défaut la référence recommandée `!secret boks_config_key`) et quatre entités
+apparaissent :
 
-Ouvrir avec un badge n'interagit pas du tout avec cette intégration : ça
-continue de fonctionner exactement comme avant, et n'apparaît ici
-qu'indirectement, via l'[historique des ouvertures](#historique-des-ouvertures)
-si vous l'activez.
+| Entité | Rôle |
+|---|---|
+| **Enrôler un badge** (bouton) | Lance un scan sur la boîte, puis enregistre le badge présenté |
+| **Révoquer le badge** (bouton) | Révoque l'UID saisi dans le champ ci-dessous |
+| **UID à révoquer** (texte) | L'UID hex (ex. `04A1B2C3`) sur lequel agit *Révoquer* |
+| **VIGIK** (switch) | Active l'accès La Poste / VIGIK |
+
+**Enrôler un badge.** Appuyez sur **Enrôler un badge**, puis dans les ~40 s, au
+clavier de la boîte : **appuyez sur une touche** (le lecteur NFC est dormant tant
+qu'aucune touche n'est pressée), **puis présentez le badge** et gardez-le en
+place. En cas de succès le badge est enregistré et Home Assistant affiche son
+UID ; les erreurs (badge non présenté à temps, clé refusée) apparaissent en
+notification. Présentez un badge que la boîte ne connaît pas encore — un badge
+déjà connu ouvrirait simplement la porte.
+
+> **Sécurité.** La Config Key est un **secret plus puissant que le code
+> d'ouverture** : quiconque a accès à votre Home Assistant peut alors inscrire
+> son propre badge ou changer le VIGIK. Utilisez une référence `!secret` ;
+> laissez le champ vide pour n'exposer aucune de ces fonctions. Le switch VIGIK
+> est *optimiste* — la boîte n'expose pas l'état VIGIK en BLE, il reflète donc le
+> dernier réglage envoyé.
+
+*Sous le capot :* ces quatre opérations émettent `SET_CONFIGURATION` (22),
+`REGISTER_NFC_TAG_SCAN_START` (23), `REGISTER_NFC_TAG` (24) et
+`UNREGISTER_NFC_TAG` (25), authentifiées par la Config Key transmise en ASCII.
+Formats reversés de l'app officielle — voir
+[TODO.md § Badge NFC Mifare](TODO.md#1-badge-nfc-mifare).
 
 ## Historique des ouvertures
 

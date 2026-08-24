@@ -17,6 +17,10 @@ remote opening is opt-in, see [Scope](#scope).
 |---|---|---|
 | Door | `binary_sensor` (`door`) | pushed by the mailbox on every change |
 | Open | `button` | **only if an open code is configured** — see [Opening the door](#opening-the-door) |
+| Enrol a badge | `button` | **only if a Config Key is configured** — see [NFC administration](#nfc-administration) |
+| Revoke the badge | `button` | **only if a Config Key is configured** — revokes the UID in the field below |
+| UID to revoke | `text` | **only if a Config Key is configured** — the badge UID for *Revoke* |
+| VIGIK | `switch` | **only if a Config Key is configured** — toggles La Poste / VIGIK access |
 | Battery | `sensor` (%) | pushed on change, read on connect |
 | Battery low | `binary_sensor` (`battery`) | diagnostic — **use this, not the percentage** ([why](#battery-alkaline-vs-regulated-cells)) |
 | Hold connection | `switch` | config — see [Holding the link](#holding-the-link) |
@@ -45,16 +49,23 @@ credentials are required or used, and no `button` entity is created.
 
 **Opening is opt-in.** If — and only if — you enter an open code in the
 options, an **Open** button appears and the integration may additionally send
-`OPEN_DOOR`. Nothing else ever becomes possible: the frame builder *refuses*
-every other opcode by construction, so code management (16–19), configuration
-changes (22) and provisioning (32–33) remain unreachable, not merely unused.
+`OPEN_DOOR`. The generic frame builder still *refuses* every other opcode by
+construction, so code management (16–19) and provisioning (32–33) remain
+unreachable.
 
-> Entering a code means **anyone with access to your Home Assistant can open
-> your mailbox**. The code is stored in the config entry, in clear text like
-> every other Home Assistant credential. Leave the field empty to keep the
-> integration strictly read-only.
+**NFC administration is opt-in too.** If — and only if — you enter your **Config
+Key** in the options, four admin entities appear (enrol / revoke a Mifare badge,
+a UID field, and a VIGIK switch) and the integration can send the corresponding
+`22`/`23`/`24`/`25` frames. Without a Config Key none of that exists. See
+[NFC administration](#nfc-administration).
 
-See [Opening the door](#opening-the-door).
+> Entering an open code means **anyone with access to your Home Assistant can
+> open your mailbox**; entering a Config Key means they can also **enrol their
+> own badge**. Both are stored in the config entry in clear text like every
+> other Home Assistant credential — use `!secret` references. Leave both fields
+> empty to keep the integration strictly read-only.
+
+See [Opening the door](#opening-the-door) and [NFC administration](#nfc-administration).
 
 ## Requirements
 
@@ -232,26 +243,41 @@ The press only reports success once the mailbox answers `VALID_OPEN_CODE`. A
 GATT write on its own proves nothing — a refused code and an unheard command
 would look identical.
 
-## Other opening methods (Mifare, Vigik)
+## NFC administration
 
-The mailbox can also be opened with a **Mifare NFC badge** or a **Vigik**
-access badge, entirely independently of Home Assistant — both are read at
-the mailbox's own keypad/NFC reader and managed through the vendor's app or
-account, not through this integration.
+The mailbox opens with a **Mifare NFC badge** or a **Vigik** access badge at
+its own keypad/NFC reader, independently of Home Assistant. Badge use only
+shows up here indirectly, through [Opening history](#opening-history).
 
-**This integration neither reads, registers, nor revokes badges of either
-kind, and it does not create or manage permanent codes either** — the code
-used above has to already exist on your account. Managing badges or codes
-requires the owner's Config Key and write access to the mailbox, a
-deliberately bigger step than the read-only-by-default model this
-integration keeps to today. It is on the roadmap — see
-[TODO.md § Mifare NFC badge](TODO.md#1-mifare-nfc-badge) and
-[TODO.md § Vigik badge](TODO.md#2-vigik-badge) for the protocol details and
-what is blocking it.
+**Managing those badges from Home Assistant is opt-in and gated on the Config
+Key.** Enter your **Config Key** in the integration options (the field defaults
+to the recommended `!secret boks_config_key`) and four entities appear:
 
-Opening with a badge does not interact with this integration at all: it
-keeps working exactly as before, and only shows up here indirectly, through
-[Opening history](#opening-history) if you enable it.
+| Entity | What it does |
+|---|---|
+| **Enrol a badge** (button) | Starts a scan on the mailbox, then registers the badge you present |
+| **Revoke the badge** (button) | Revokes the UID entered in the field below |
+| **UID to revoke** (text) | The hex UID (e.g. `04A1B2C3`) the *Revoke* button acts on |
+| **VIGIK** (switch) | Toggles La Poste / VIGIK access |
+
+**Enrolling a badge.** Press **Enrol a badge**, then within ~40 s, at the
+mailbox keypad: **press a key** (the NFC reader is dormant until a keypress),
+**then present the badge** and hold it. On success the badge is registered and
+Home Assistant reports its UID; errors (no badge presented in time, key
+refused) surface as a notification. Present a badge the mailbox does not yet
+know — a badge it already knows would just open the door.
+
+> **Security.** The Config Key is a **more powerful secret than the open code**:
+> anyone with access to your Home Assistant can then enrol their own badge or
+> change VIGIK. Use a `!secret` reference; leave the field empty to expose none
+> of this. The VIGIK switch is *optimistic* — the mailbox does not report VIGIK
+> state over BLE, so the switch reflects the last value you set.
+
+*Under the hood:* these four operations send `SET_CONFIGURATION` (22),
+`REGISTER_NFC_TAG_SCAN_START` (23), `REGISTER_NFC_TAG` (24) and
+`UNREGISTER_NFC_TAG` (25), authenticated by the Config Key sent in ASCII. Frame
+formats were reverse-engineered from the official app — see
+[TODO.md § Mifare NFC badge](TODO.md#1-mifare-nfc-badge).
 
 ## Opening history
 

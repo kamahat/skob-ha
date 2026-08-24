@@ -4,6 +4,30 @@ All notable changes to this integration are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/), and the project
 follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased] — 1.2.0
+
+### Added
+- **NFC administration**, opt-in behind a new **Config Key** option (accepts a
+  `!secret` reference, defaults to `!secret boks_config_key`): enrol a Mifare
+  badge (*Enrol a badge* button → present the badge at the keypad), revoke one
+  by UID (*UID to revoke* text + *Revoke the badge* button), and a **VIGIK**
+  switch (La Poste access). Without a Config Key none of these entities exist
+  and the transmit path is unchanged. See the README's *NFC administration*.
+
+### Fixed
+- **The long `225 UNAUTHORIZED` wall was a wrong frame format, not an auth
+  wall.** Frames for opcodes `22`–`25` had been built from the community
+  `@thib3113/boks-sdk`, whose `SCAN_START` prepends a spurious `0x00` that
+  shifts the Config Key by one byte — so the box read a wrong key and refused
+  it. The correct formats were reverse-engineered from the official app
+  (`com.boks.app`) and confirmed on the box (`SCAN_START → 199`, key accepted):
+  the Config Key is sent in ASCII, `SCAN_START` carries no leading byte and no
+  checksum. Bonding, SRP and dongle-identity theories were all red herrings.
+
+> **Note.** Released after end-to-end enrolment is confirmed on hardware
+> (`SCAN_START → 199` already confirmed; full `REGISTER → 200` pending a
+> field test).
+
 ## [1.1.0] — 2026-08-21
 
 ### Added

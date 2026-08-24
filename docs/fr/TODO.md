@@ -38,15 +38,14 @@ néanmoins différer : la fonction devra détecter la capacité plutôt que la
 supposer.
 
 **État.** Lecture livrée (capteur « Dernière ouverture badge », v1.1.0).
-**Écriture (register/unregister) PARQUÉE** — voir
-[docs/design/nfc-register.md](../design/nfc-register.md). Validation réelle
-menée : la boîte honore l'opcode 23 et notre trame est correcte, mais l'auth
-Config Key est refusée (`225`) **partout** — via le proxy ESPHome comme via un
-central natif noble/BlueZ, avec la vraie clé (valeur confirmée par l'API compte).
-Recoupé avec le modèle (badges pré-provisionnés, gérés cloud → dongle), `23-25`
-sont vraisemblablement la voie de provisioning du **dongle**, avec une identité
-d'auth propre que la Config Key seule ne reproduit pas. Reprise possible seulement
-via appairage explicite (invasif), RE de l'identité du dongle, ou l'API cloud.
+**Écriture IMPLÉMENTÉE (v1.2.0)** — register/unregister/VIGIK derrière la Config
+Key. Le long blocage sur `225 UNAUTHORIZED` était en fait un **mauvais format de
+trame** hérité du SDK communautaire (un `0x00` parasite en tête qui décalait la
+Config Key), pas une auth manquante. Format correct reversé de l'app officielle
+(`com.boks.app`, `main.js`) et confirmé sur la boîte (`SCAN_START → 199`, clé
+acceptée). Ni bonding, ni SRP, ni voie réservée au dongle. Voir
+[docs/design/nfc-register.md](../design/nfc-register.md). **Reste :** test
+d'enrôlement de bout en bout sur matériel, puis release taguée.
 
 ---
 
@@ -72,10 +71,11 @@ ce module clavier/NFC — ici ajouté en rétrofit sur une boîte par ailleurs
 `Model 2.0` — et les deux sujets badges sont testables de bout en bout sur du
 vrai matériel.
 
-**État.** À investiguer. Le chemin protocolaire est inféré depuis les constantes
-du SDK, pas encore observé sur un appareil, mais un appareil qui le prend en
-charge est disponible pour capture. Rien ne doit être implémenté avant que le
-format des trames soit confirmé.
+**État.** IMPLÉMENTÉ (v1.2.0) — un switch **VIGIK**, derrière la Config Key,
+envoie `SET_CONFIGURATION` type `0x01` (LaPosteNfc). Même chemin d'auth que le
+sujet 1, donc débloqué par le même correctif (bon format de trame issu de l'app
+officielle). Le switch est optimiste (la boîte n'expose pas l'état VIGIK en BLE) ;
+son accusé positif exact reste à confirmer sur matériel.
 
 ---
 

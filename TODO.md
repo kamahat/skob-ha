@@ -37,15 +37,14 @@ hardware. Other hardware generations may still differ, so the feature should
 detect capability rather than assume it.
 
 **Status.** Read side shipped (*Last badge opening* sensor, v1.1.0). **Write side
-(register/unregister) PARKED** — see
-[docs/design/nfc-register.md](docs/design/nfc-register.md). Real validation done:
-the box honors opcode 23 and our frame is correct, but the Config Key auth is
-rejected (`225`) **everywhere** — via the ESPHome proxy and via a native
-noble/BlueZ central, with the real key (value confirmed via the account API).
-Cross-referenced with the model (tags are pre-provisioned, managed cloud →
-dongle), `23-25` are most likely the **dongle's** provisioning path, with an auth
-identity the Config Key alone doesn't reproduce. Reopen only via explicit pairing
-(invasive), reverse-engineering the dongle's identity, or the cloud API.
+IMPLEMENTED (v1.2.0)** — register/unregister/VIGIK behind the Config Key. The long
+`225 UNAUTHORIZED` block turned out to be a **wrong frame format** inherited from
+the community SDK (a spurious leading `0x00` that shifted the Config Key), not a
+missing auth. Correct format reverse-engineered from the official app
+(`com.boks.app`, `main.js`) and confirmed on the box (`SCAN_START → 199`, key
+accepted). Not bonding, not SRP, not a dongle-only path. See
+[docs/design/nfc-register.md](docs/design/nfc-register.md). **Remaining:**
+end-to-end enrolment test on hardware, then a tagged release.
 
 ---
 
@@ -68,9 +67,11 @@ NFC of subject 1. So the "HW ≥ 4.0" note is about this keypad/NFC module — h
 retrofitted onto an otherwise `Model 2.0` box — and both badge subjects are
 testable end-to-end on real hardware.
 
-**Status.** Investigation. The protocol path is inferred from SDK constants and
-not yet observed on a device, but a device that supports it is available for
-capture. Nothing should be implemented before the frame layout is confirmed.
+**Status.** IMPLEMENTED (v1.2.0) — a **VIGIK** switch, behind the Config Key,
+sends `SET_CONFIGURATION` type `0x01` (LaPosteNfc). Same auth path as subject 1,
+so unblocked by the same fix (correct frame format from the official app). The
+switch is optimistic (the box does not expose VIGIK state over BLE); its exact
+positive acknowledgement is still to be confirmed on hardware.
 
 ---
 
