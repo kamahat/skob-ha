@@ -26,6 +26,7 @@ from .const import (
     CONF_ADDRESS,
     CONF_CONFIG_KEY,
     CONF_KEEPALIVE,
+    DEFAULT_CONFIG_KEY_SECRET,
     CONF_LABEL,
     CONF_OPEN_CODE,
     CONF_RECONNECT_MAX,
@@ -242,7 +243,13 @@ class BoksOptionsFlow(OptionsFlow):
                     ),
                     vol.Optional(
                         CONF_CONFIG_KEY,
-                        default=options.get(CONF_CONFIG_KEY, ""),
+                        # Par défaut, on propose la référence secrets.yaml
+                        # recommandée plutôt qu'un champ vide : la Config Key doit
+                        # rester dans secrets.yaml. Un utilisateur sans ce secret
+                        # est guidé par l'erreur « unknown_secret » à la validation.
+                        default=options.get(
+                            CONF_CONFIG_KEY, DEFAULT_CONFIG_KEY_SECRET
+                        ),
                     ): selector.TextSelector(
                         selector.TextSelectorConfig(
                             type=selector.TextSelectorType.PASSWORD

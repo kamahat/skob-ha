@@ -96,6 +96,9 @@ ADMIN_ACK_TIMEOUT: Final = 30.0
 CONF_CONFIG_KEY: Final = "config_key"
 #: Longueur de la Config Key : exactement 8 caractères hexadécimaux.
 CONFIG_KEY_LENGTH: Final = 8
+#: Valeur proposée par défaut dans le formulaire : la Config Key doit rester
+#: dans secrets.yaml, on pré-remplit donc la référence recommandée.
+DEFAULT_CONFIG_KEY_SECRET: Final = "!secret boks_config_key"
 
 #: Identifiant lisible de la boîte (ex. « F540 »). La Boks ne l'expose pas :
 #: son Serial Number GATT (0x2A25) renvoie sa propre adresse MAC, et aucune
