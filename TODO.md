@@ -131,6 +131,42 @@ capture. Nothing should be implemented before the frame layout is confirmed.
 
 ---
 
+## 5. Dedicated config surface for the open code
+
+**Goal.** Make managing the open code — and later, once subjects 1/2 land,
+Mifare/Vigik credentials — less easy to get stuck on for a first-time
+install.
+
+**What we know.** Feedback from a user of the public repo: after installing
+the integration, it is not obvious that a *separate* step (**Configure** →
+*Open code*) is needed before the **Open** button appears — read the
+[README](README.md#other-opening-methods-mifare-vigik) far enough and it is
+documented, but nothing in the install flow itself points there. Filed as
+direct feedback, not a GitHub issue.
+
+**What's needed.** Design first, as agreed for any config-surface change.
+Two separate things get conflated in the request as received:
+
+1. **Discoverability** — likely fixable with docs alone: point from the end
+   of Installation straight at Opening the door, instead of leaving the
+   reader to reach it several sections later. Cheap, no code change.
+2. **A dedicated YAML file for codes, instead of `!secret`** — bigger ask.
+   `!secret` is already optional today (the field accepts a raw code
+   directly), so part of the friction may just be under-documented, not a
+   missing feature. A genuinely separate file
+   (e.g. `config/boks_codes.yaml`) that this integration reads directly
+   would be non-standard relative to how every other HA integration handles
+   secrets, and needs its own justification beyond "storing it in
+   `secrets.yaml` requires filesystem access some HA OS installs don't
+   expose to the dashboard" — which is real, but may be better solved by
+   documenting the raw-code option more clearly than by inventing a new
+   config file format.
+
+**Status.** Not started. (1) is cheap and worth doing regardless; (2) needs
+scoping before any code gets written.
+
+---
+
 *If you plan to work on any of these, opening an issue first avoids duplicate
 effort — especially for subjects 1 and 2, whose protocol details still need to
 be confirmed on real hardware.*

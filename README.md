@@ -87,6 +87,13 @@ This is what allows Home Assistant to route Bluetooth to the mailbox.
    (its service UUID is declared in the manifest). Otherwise, *Add integration
    → Boks*.
 
+At this point you have door state, battery, and diagnostics — read-only,
+nothing else to configure. **Want to open the mailbox from Home Assistant
+too?** That is a separate, opt-in step — nothing enables it by installing the
+integration alone. See [Opening the door](#opening-the-door): without it,
+the **Open** button simply does not exist yet, which is expected, not a
+sign anything is broken.
+
 ## Holding the link
 
 The **Hold connection** switch is the central trade-off of this integration,
