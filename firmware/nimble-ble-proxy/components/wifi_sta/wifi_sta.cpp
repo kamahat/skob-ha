@@ -100,28 +100,12 @@ bool read_creds_from_nvs(char *ssid_out, size_t ssid_cap,
 }
 
 void on_wifi_event(void * /*arg*/, esp_event_base_t base, int32_t id,
-                   void *data) {
+                   void * /*data*/) {
   if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
-#if CONFIG_SOC_WIFI_SUPPORT_5G
-    // TEMP experiment (esp32c5 bring-up): the whole point of this dual-band
-    // chip is keeping 2.4 GHz free for BLE, but the default scan/connect
-    // path picked a 2.4 GHz AP (channel 1) even though the target SSID is
-    // also offered on 5 GHz. Force 5G-only here, right before the first
-    // connect, to actually exercise that path. No-op on every other target
-    // (CONFIG_SOC_WIFI_SUPPORT_5G is only set for esp32c5 today). Should
-    // become a Kconfig option rather than unconditional if this graduates
-    // past validation.
-    esp_err_t band_err = esp_wifi_set_band_mode(WIFI_BAND_MODE_5G_ONLY);
-    if (band_err != ESP_OK) {
-      ESP_LOGW(TAG, "esp_wifi_set_band_mode(5G_ONLY) failed: %s",
-               esp_err_to_name(band_err));
-    }
-#endif
     esp_wifi_connect();
   } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
     g_sta_connected.store(false, std::memory_order_relaxed);
-    auto *evt = static_cast<wifi_event_sta_disconnected_t *>(data);
-    ESP_LOGW(TAG, "disconnected (reason=%d); retrying", evt->reason);
+    ESP_LOGW(TAG, "disconnected; retrying");
     esp_wifi_connect();
   }
 }
@@ -288,32 +272,10 @@ void compose_ap_ssid(char *out, size_t cap) {
   ESP_LOGW(AP_TAG, "entering SoftAP provisioning mode");
 
   // Tear down the half-running STA before re-binding netif as AP.
-  esp_wifi_stop();
-
-#if CONFIG_SOC_WIFI_SUPPORT_5G
-  // esp_wifi_set_band_mode() is global to the whole radio, not per
-  // interface — the 5G-only lock forced for the STA connect attempt
-  // (see on_wifi_event) is still in effect here, and AP_CHANNEL (1) is
-  // a 2.4 GHz channel, invalid under 5G-only: esp_wifi_set_config below
-  // would fail under ESP_ERROR_CHECK and the device would abort/reboot
-  // instead of ever showing the fallback SoftAP.
-  //
-  // Calling esp_wifi_set_band_mode() here directly (post-stop, pre-start)
-  // does NOT work: it needs the radio actually started, and "started at
-  // some point earlier this boot" isn't enough — confirmed by hitting
-  // ESP_ERR_WIFI_NOT_STARTED here even after a real STA session. A full
-  // deinit/reinit is the only state-diff-proof way to drop the 5G-only
-  // lock: it resets band mode to the driver default (2G/AUTO) instead of
-  // requiring get-a-flag-back-into-the-right-state juggling that's easy
-  // to get subtly wrong again on the next preview-target surprise.
-  esp_wifi_deinit();
-  wifi_init_config_t reinit_cfg = WIFI_INIT_CONFIG_DEFAULT();
-  ESP_ERROR_CHECK(esp_wifi_init(&reinit_cfg));
-#endif
-
   // create_default_wifi_ap registers the AP netif (192.168.4.1/24 +
   // built-in DHCP server) and its event handlers; do it before
   // set_mode so the wifi driver sees both netifs at mode-switch time.
+  esp_wifi_stop();
   esp_netif_create_default_wifi_ap();
   esp_wifi_set_mode(WIFI_MODE_AP);
 
@@ -380,14 +342,6 @@ void start_and_wait_for_ip() {
 
   wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
   ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-#if CONFIG_SOC_WIFI_SUPPORT_5G
-  // RAM storage: esp_wifi_set_band_mode(5G_ONLY) below must not persist to
-  // flash, or it survives the deinit/reinit in enter_ap_provisioning() and
-  // the AP side still can't use its 2.4 GHz channel — confirmed: it does
-  // persist under the default WIFI_STORAGE_FLASH, deinit/reinit alone
-  // wasn't enough to clear it.
-  ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
-#endif
 
   ESP_ERROR_CHECK(esp_event_handler_instance_register(
       WIFI_EVENT, ESP_EVENT_ANY_ID, &on_wifi_event, nullptr, nullptr));
