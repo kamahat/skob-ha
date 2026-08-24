@@ -143,42 +143,171 @@ plus large.
 
 ## 5. Surface de configuration dédiée pour le code d'ouverture
 
-**Objectif.** Rendre la gestion du code d'ouverture — et plus tard, une fois
-les sujets 1/2 aboutis, les identifiants de badges Mifare/Vigik — moins
-piégeuse pour une première installation.
+**Objectif.** Remplacer l'option unique `open_code` — une chaîne qui
+signifie « pas de code », un code brut, ou une référence `!secret <clé>»
+selon ce par quoi elle commence — par un choix explicite, et étendre cette
+même surface aux codes à usage unique (OTP), que le champ actuel ne peut
+pas du tout représenter (voir plus bas).
 
 **Ce que l'on sait.** Retour d'un utilisateur du dépôt public : après avoir
-installé l'intégration, ce n'est pas évident qu'une étape *séparée*
-(**Configurer** → *Code d'ouverture*) est nécessaire avant que le bouton
-**Ouvrir** apparaisse — c'est documenté si on lit le
-[README](README.md#autres-méthodes-douverture-mifare-vigik) assez loin, mais
-rien dans le parcours d'installation lui-même n'y renvoie. Remonté en retour
-direct, pas via une issue GitHub.
+installé l'intégration, ce n'était pas évident qu'ouvrir nécessite une
+étape séparée (**Configurer** → *Code d'ouverture*) — corrigé en pointant
+Installation directement vers
+[Ouvrir la porte](README.md#ouvrir-la-porte) (fait, voir l'historique des
+commits de doc). L'autre moitié de ce retour — un fichier dédié plutôt que
+`!secret` — s'est avérée, après examen, mieux résolue en rendant explicite
+la *forme* du champ existant qu'en inventant un nouveau format de fichier
+(voir Conception). Par ailleurs, le README documente déjà que **les codes
+à usage unique existent et ne sont pas supportés** : « les codes à usage
+unique que relaie l'application mobile ne fonctionneraient qu'une seule
+fois » — l'intégration exige aujourd'hui un code permanent précisément
+pour cette raison.
 
-**Ce qu'il faut.** Design d'abord, comme convenu pour tout changement de
-surface de configuration. Deux choses distinctes sont mélangées dans la
-demande telle que reçue :
+**Conception (ébauchée, pas encore implémentée).**
 
-1. **Découvrabilité** — probablement corrigeable par la doc seule : pointer
-   depuis la fin de l'installation directement vers Ouvrir la porte, au lieu
-   de laisser le lecteur y arriver plusieurs sections plus tard. Peu coûteux,
-   aucun changement de code.
-2. **Un fichier YAML dédié pour les codes, au lieu de `!secret`** — demande
-   plus lourde. `!secret` est déjà optionnel aujourd'hui (le champ accepte un
-   code en clair directement), donc une partie de la friction est peut-être
-   juste sous-documentée, pas une fonctionnalité manquante. Un fichier
-   vraiment séparé (ex. `config/boks_codes.yaml`) que l'intégration lirait
-   elle-même serait non standard par rapport à la façon dont toute autre
-   intégration HA gère les secrets, et mérite sa propre justification
-   au-delà de « stocker ça dans `secrets.yaml` demande un accès au système
-   de fichiers que certaines installs HA OS n'exposent pas au tableau de
-   bord » — vrai, mais peut-être mieux résolu en documentant mieux l'option
-   du code en clair qu'en inventant un nouveau format de fichier de config.
+Séparer `open_code` en deux options :
 
-**État.** Pas commencé. (1) est peu coûteux et vaut la peine dans tous les
-cas ; (2) a besoin d'être cadré avant qu'aucun code ne soit écrit.
+```python
+CONF_OPEN_CODE_MODE  = "open_code_mode"   # "none" | "direct" | "secret" | "otp"
+CONF_OPEN_CODE_VALUE = "open_code_value"  # le sens dépend du mode
+```
 
----
+Un Options Flow en 2 étapes : étape `init` (réglages existants, inchangés)
+plus un `SelectSelector` pour le mode ; si mode ≠ `none`, étape `open_code`
+affichant un champ dont le type et le libellé suivent le mode — masqué
+sur une ligne pour `direct`/`secret`, multiligne (« un code par ligne »)
+pour `otp`.
+
+Les modes statiques (`none`/`direct`/`secret`) se résolvent en une seule
+valeur, une fois, à `async_setup_entry`, exactement comme aujourd'hui —
+juste dispatchés par un mode explicite plutôt que reniflés depuis un
+préfixe de chaîne :
+
+```mermaid
+flowchart TD
+    old["v1 sur disque<br/>options.open_code<br/><i>&quot;&quot; / &quot;ABC123&quot; / &quot;!secret k&quot;</i>"]
+
+    sniff{"préfixe<br/>!secret ?"}
+
+    modeNone["mode=none<br/>value=&quot;&quot;"]
+    modeDirect["mode=direct<br/>value=ABC123"]
+    modeSecret["mode=secret<br/>value=k"]
+
+    ui["Options Flow<br/>étape mode → étape valeur"]
+    modeOtp["mode=otp<br/>value=codes collés<br/>(1 par ligne)"]
+
+    new["v2 sur disque<br/>open_code_mode<br/>open_code_value"]
+
+    dispatch{"mode ?"}
+    secrets[("secrets.yaml")]
+    resolved["open_code résolu"]
+    pool[("pool OTP<br/>Store dédié")]
+
+    btn{"résolu ?"}
+    yes["bouton Ouvrir créé"]
+    no["pas de bouton<br/>lecture seule"]
+    otpFlow["voir schéma 2 —<br/>consommation à l'usage"]
+
+    old -- "lue une fois, migration v1→v2" --> sniff
+    sniff -- vide --> modeNone
+    sniff -- oui --> modeSecret
+    sniff -- non --> modeDirect
+    modeNone --> new
+    modeDirect --> new
+    modeSecret --> new
+
+    ui -- "nouvelle entrée / édition" --> new
+    ui -. "otp : uniquement via l'UI,<br/>jamais produit par la migration" .-> modeOtp
+    modeOtp --> new
+
+    new -- "lue à chaque démarrage" --> dispatch
+    dispatch -- none --> resolved
+    dispatch -- direct --> resolved
+    dispatch -- "secret: clé=value" --> secrets
+    secrets -- contenu --> resolved
+    dispatch -- "otp: value ajouté au pool" --> pool
+    pool --> otpFlow
+
+    resolved --> btn
+    btn -- oui --> yes
+    btn -- non --> no
+
+    style old fill:#00000000,stroke:#888
+    style new fill:#00000000,stroke:#888
+    style modeSecret stroke:#2b6cb0,stroke-width:2px
+    style secrets stroke:#2b6cb0,stroke-width:2px
+    style modeOtp stroke:#b7791f,stroke-width:2px
+    style pool stroke:#b7791f,stroke-width:2px
+    style otpFlow stroke:#b7791f,stroke-width:2px,stroke-dasharray: 4 3
+```
+
+`otp` casse la symétrie des trois autres modes : il ne se résout pas à une
+valeur unique au démarrage, il alimente un pool **consommé** un élément à
+la fois, suivi dans un `homeassistant.helpers.storage.Store` dédié (état
+d'exécution, pas de la config utilisateur — gardé hors de
+`config_entry.options`), par entrée de configuration. Soumettre le
+formulaire en mode `otp` **ajoute** les codes analysés et validés au pool
+existant ; ça ne le remplace jamais, pour qu'une modification de réglage
+sans rapport (keepalive, label) ne puisse pas effacer un pool partiellement
+consommé. Le champ est toujours affiché vide dans le formulaire — en
+écriture seule, comme les champs masqués, et pour la même raison : aucune
+raison de jamais réafficher un secret à usage unique encore valide.
+
+Consommation, à chaque appui sur **Ouvrir** :
+
+```mermaid
+flowchart TD
+    press["appui sur Ouvrir"]
+    check{"pool<br/>non vide ?"}
+    empty["BoksOpenError<br/>&quot;plus de code OTP —<br/>en ajouter via Configurer&quot;"]
+
+    pop["retire le 1er code du pool<br/>(FIFO, avant l'envoi)"]
+    send["frame OPEN_DOOR<br/>envoyée à la boîte"]
+
+    resp{"réponse ?"}
+    valid["VALID_OPEN_CODE"]
+    invalid["INVALID_OPEN_CODE"]
+    timeout["silence / timeout 30s"]
+
+    committed["retrait persisté<br/>dans le Store"]
+    doorOpen["porte ouverte"]
+    fail["BoksOpenError<br/>code refusé"]
+    failAmbig["BoksOpenError<br/>lien coupé — code perdu,<br/>pas ré-ajouté au pool"]
+
+    press --> check
+    check -- non --> empty
+    check -- oui --> pop
+    pop --> send
+    pop -. "retiré ici, pas après succès —<br/>évite de rejouer un code déjà accepté" .-> committed
+    send --> resp
+    resp -- oui --> valid --> doorOpen
+    resp -- non --> invalid --> fail
+    resp -- non --> timeout --> failAmbig
+
+    style pop stroke:#b7791f,stroke-width:2px
+    style empty stroke:#c53030,stroke-width:2px
+    style failAmbig stroke:#c53030,stroke-width:2px
+```
+
+**Question ouverte, pas encore tranchée :** le retrait du pool a lieu **à
+l'envoi**, pas à la confirmation. Ça évite qu'un code déjà accepté reste
+dans le pool et soit rejoué (échec garanti au prochain appui). Le
+compromis : si le lien tombe *avant* que la boîte ait reçu la trame, le
+code est perdu pour rien — l'utilisateur en recolle un autre, sans
+ambiguïté sur l'état de la boîte. Penche vers « gaspiller un code » plutôt
+que « un pool qui pourrait mentir sur ce qui reste utilisable », mais
+c'est un vrai arbitrage à valider par quelqu'un avant l'implémentation, pas
+un défaut évident.
+
+À prévoir aussi : un capteur de diagnostic
+(`sensor.boks_<id>_codes_otp_restants` / *Codes OTP restants*) — sans lui,
+le pool s'épuise en silence jusqu'au premier échec surprise.
+
+**État.** Conception ébauchée (cette entrée), pas implémentée. Bloqué sur :
+(a) la validation par quelqu'un de l'arbitrage retrait-à-l'envoi vs
+retrait-à-la-confirmation ci-dessus, (b) la revue normale une fois le code
+écrit — comme tout changement de config-flow, alimente au passage les cas
+de test déjà prévus au sujet 4 (« cas limites des config/options flow »).
 
 *Si vous comptez travailler sur l'un de ces sujets, ouvrir une issue au
 préalable évite les efforts en double — surtout pour les sujets 1 et 2, dont les
