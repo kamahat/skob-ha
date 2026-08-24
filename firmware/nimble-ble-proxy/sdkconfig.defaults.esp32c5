@@ -1,0 +1,14 @@
+# esp32c5 target overrides. Applied on top of sdkconfig.defaults only when
+# IDF_TARGET=esp32c5.
+#
+# This target is an experiment: the C5 is dual-band (2.4 + 5 GHz Wi-Fi 6),
+# unlike the S3/C6 this project otherwise targets. Putting Wi-Fi on 5 GHz
+# frees the 2.4 GHz radio for Bluetooth alone, avoiding the single-radio
+# WiFi/BLE coexistence contention noted in docs/hardware.md. Not yet
+# validated against the mailbox — see the FINDINGS entry for this target.
+
+# No wifi_creds.h is provisioned for this bring-up: SoftAP fallback lets
+# real WiFi credentials be entered on the device's own provisioning page
+# (http://192.168.4.1/ once the AP "<hostname>-setup" comes up) instead of
+# being hardcoded into a source file.
+CONFIG_NBP_AP_FALLBACK=y
