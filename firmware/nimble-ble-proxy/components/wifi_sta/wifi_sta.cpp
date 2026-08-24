@@ -100,12 +100,28 @@ bool read_creds_from_nvs(char *ssid_out, size_t ssid_cap,
 }
 
 void on_wifi_event(void * /*arg*/, esp_event_base_t base, int32_t id,
-                   void * /*data*/) {
+                   void *data) {
   if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
+#if CONFIG_SOC_WIFI_SUPPORT_5G
+    // TEMP experiment (esp32c5 bring-up): the whole point of this dual-band
+    // chip is keeping 2.4 GHz free for BLE, but the default scan/connect
+    // path picked a 2.4 GHz AP (channel 1) even though the target SSID is
+    // also offered on 5 GHz. Force 5G-only here, right before the first
+    // connect, to actually exercise that path. No-op on every other target
+    // (CONFIG_SOC_WIFI_SUPPORT_5G is only set for esp32c5 today). Should
+    // become a Kconfig option rather than unconditional if this graduates
+    // past validation.
+    esp_err_t band_err = esp_wifi_set_band_mode(WIFI_BAND_MODE_5G_ONLY);
+    if (band_err != ESP_OK) {
+      ESP_LOGW(TAG, "esp_wifi_set_band_mode(5G_ONLY) failed: %s",
+               esp_err_to_name(band_err));
+    }
+#endif
     esp_wifi_connect();
   } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
     g_sta_connected.store(false, std::memory_order_relaxed);
-    ESP_LOGW(TAG, "disconnected; retrying");
+    auto *evt = static_cast<wifi_event_sta_disconnected_t *>(data);
+    ESP_LOGW(TAG, "disconnected (reason=%d); retrying", evt->reason);
     esp_wifi_connect();
   }
 }
