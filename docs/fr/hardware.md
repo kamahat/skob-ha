@@ -47,6 +47,51 @@ contre la boîte ici.
 > cœur RISC-V haute performance plus un cœur basse consommation, pas deux cœurs
 > applicatifs.
 
+### Notes de mise en route C5 (2026-08-24, XIAO ESP32-C5)
+
+Première mise en route réelle contre la boîte — voir la
+[PR #4](https://github.com/kamahat/skob-ha/pull/4) pour la branche firmware
+(`idf.py --preview set-target esp32c5` ; la cible reste preview sous
+IDF v5.5).
+
+- **Le WiFi ne choisit pas la 5 GHz par défaut.** Le chemin scan/connexion
+  standard s'associe sur un canal 2,4 GHz même avec un SSID dual-band à
+  portée — forcer `esp_wifi_set_band_mode(WIFI_BAND_MODE_5G_ONLY)` à la
+  connexion est nécessaire pour réellement exercer le scénario dual-band
+  qui justifie cette cible.
+- **Ce verrouillage de bande survit à une réinitialisation du driver WiFi**,
+  car `esp_wifi_set_band_mode()` écrit en flash sous le
+  `WIFI_STORAGE_FLASH` par défaut. Si la connexion 5 GHz échoue, le
+  SoftAP de secours (qui a besoin du 2,4 GHz, canal 1) hérite du
+  verrouillage 5G-only et l'appareil plante au lieu de récupérer. Corrigé
+  avec `esp_wifi_set_storage(WIFI_STORAGE_RAM)` — voir la PR pour le
+  détail.
+- **Se connecte avec succès en 5 GHz** (confirmé au bureau : canal 64,
+  SNR 36 dB) et NimBLE démarre en parallèle.
+- **Contre la vraie boîte, la connexion BLE est lente — environ 10
+  secondes** pour aboutir (côté firmware, `onConnect`), contre quelques
+  secondes sur la référence S3. Le budget de tentative de Home Assistant
+  (`bleak-retry-connector`) est plus court que ça et abandonne avant,
+  donc l'intégration ne voit jamais la connexion réussir même si le
+  firmware y arrive finalement. Pas encore de cause racine identifiée —
+  la piste principale est la coexistence WiFi/BLE pendant que la 5 GHz
+  est activement associée : personne n'avait profilé la latence de
+  connexion BLE en rôle central sur cette puce sous charge WiFi active
+  auparavant.
+- **Antenne externe : incompatibilité de connecteur, pas un problème
+  RF/bande.** Essai d'une antenne Bingfu dual-band 2,4/5,8 GHz (confirmée
+  réellement dual-band, RP-SMA + pigtail U.FL) à la place de l'antenne de
+  série — le WiFi a complètement cessé de fonctionner. Pas un problème de
+  bande d'antenne : la vérification physique a montré **que les deux
+  connecteurs U.FL sont de tailles/standards différents** (les cartes
+  XIAO utilisent souvent un micro-connecteur plus petit type MHF4, pas le
+  U.FL/IPEX-1 taille standard des pigtails génériques comme le Bingfu) —
+  le connecteur s'enclenche visuellement mais ne fait pas un vrai contact
+  RF. Aucun switch de sélection d'antenne côté firmware trouvé pour cette
+  carte (contrairement à la XIAO ESP32-C6 sœur, qui en a un) — un seul
+  port U.FL, ce qui y est correctement embroché est l'antenne. Coincé sur
+  l'antenne de série en attendant un pigtail au bon micro-connecteur.
+
 ## Ports USB — le piège classique
 
 La plupart des cartes ESP32-S3 exposent **deux ports USB-C**, au comportement

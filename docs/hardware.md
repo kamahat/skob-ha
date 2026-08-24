@@ -43,6 +43,50 @@ neither has yet been validated against the mailbox here.
 > it is mature and cheap. Its "cores" are not comparable to the S3's: one
 > high-performance RISC-V core plus a low-power core, not two application cores.
 
+### C5 bring-up notes (2026-08-24, XIAO ESP32-C5)
+
+First real bring-up against the mailbox — see
+[PR #4](https://github.com/kamahat/skob-ha/pull/4) for the firmware branch
+(`idf.py --preview set-target esp32c5`; the target is still preview in
+IDF v5.5).
+
+- **WiFi does not pick 5 GHz by default.** The stock scan/connect path
+  associated on a 2.4 GHz channel even with a dual-band SSID in range —
+  forcing `esp_wifi_set_band_mode(WIFI_BAND_MODE_5G_ONLY)` on connect
+  is required to actually exercise the dual-band scenario this target
+  exists for.
+- **That band lock persists across a WiFi driver reinit**, since
+  `esp_wifi_set_band_mode()` writes through to flash under the default
+  `WIFI_STORAGE_FLASH`. If the 5 GHz connect ever fails, the SoftAP
+  provisioning fallback (which needs 2.4 GHz, channel 1) inherits the
+  stale 5G-only lock and the device aborts instead of recovering. Fixed
+  with `esp_wifi_set_storage(WIFI_STORAGE_RAM)` — see the PR for detail.
+- **Connects successfully on 5 GHz** (confirmed at the desk: channel 64,
+  SNR 36 dB) and NimBLE starts alongside it.
+- **Against the actual mailbox, the BLE connect is slow — around 10
+  seconds** to complete (firmware-side `onConnect`), against a couple of
+  seconds on the S3 reference. Home Assistant's own connect-attempt
+  budget (`bleak-retry-connector`) is shorter than that and gives up
+  first, so the integration never sees the connection succeed even
+  though the firmware eventually gets there. Not yet root-caused —
+  leading suspect is WiFi/BLE coexistence overhead while 5 GHz is
+  actively associated, since this is new territory: nobody had profiled
+  BLE central-role connect latency on this chip under active WiFi load
+  before.
+- **External antenna: connector mismatch, not a band/RF problem.**
+  Tried a Bingfu 2.4/5.8 GHz dual-band antenna (confirmed genuinely
+  dual-band, RP-SMA + U.FL pigtail) in place of the stock antenna —
+  WiFi stopped working entirely. Not an antenna-band issue: physical
+  check showed **the two U.FL connectors are different sizes/standards**
+  (XIAO boards commonly use a smaller MHF4-class micro-connector, not
+  the full-size U.FL/IPEX-1 that generic pigtails like the Bingfu ship
+  with) — the connector visibly clips but doesn't make real RF contact.
+  No firmware-side antenna-select switch was found for this board
+  (unlike the sibling XIAO ESP32-C6, which has one) — it's a single
+  U.FL port, whatever's properly mated to it is the antenna. Stuck on
+  the stock antenna until a matching micro-connector pigtail is
+  sourced.
+
 ## USB ports — a common pitfall
 
 Most ESP32-S3 devkits expose **two USB-C ports**, and they do not behave alike:
