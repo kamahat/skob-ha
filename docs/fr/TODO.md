@@ -141,6 +141,45 @@ plus large.
 
 ---
 
+## 5. Surface de configuration dédiée pour le code d'ouverture
+
+**Objectif.** Rendre la gestion du code d'ouverture — et plus tard, une fois
+les sujets 1/2 aboutis, les identifiants de badges Mifare/Vigik — moins
+piégeuse pour une première installation.
+
+**Ce que l'on sait.** Retour d'un utilisateur du dépôt public : après avoir
+installé l'intégration, ce n'est pas évident qu'une étape *séparée*
+(**Configurer** → *Code d'ouverture*) est nécessaire avant que le bouton
+**Ouvrir** apparaisse — c'est documenté si on lit le
+[README](README.md#autres-méthodes-douverture-mifare-vigik) assez loin, mais
+rien dans le parcours d'installation lui-même n'y renvoie. Remonté en retour
+direct, pas via une issue GitHub.
+
+**Ce qu'il faut.** Design d'abord, comme convenu pour tout changement de
+surface de configuration. Deux choses distinctes sont mélangées dans la
+demande telle que reçue :
+
+1. **Découvrabilité** — probablement corrigeable par la doc seule : pointer
+   depuis la fin de l'installation directement vers Ouvrir la porte, au lieu
+   de laisser le lecteur y arriver plusieurs sections plus tard. Peu coûteux,
+   aucun changement de code.
+2. **Un fichier YAML dédié pour les codes, au lieu de `!secret`** — demande
+   plus lourde. `!secret` est déjà optionnel aujourd'hui (le champ accepte un
+   code en clair directement), donc une partie de la friction est peut-être
+   juste sous-documentée, pas une fonctionnalité manquante. Un fichier
+   vraiment séparé (ex. `config/boks_codes.yaml`) que l'intégration lirait
+   elle-même serait non standard par rapport à la façon dont toute autre
+   intégration HA gère les secrets, et mérite sa propre justification
+   au-delà de « stocker ça dans `secrets.yaml` demande un accès au système
+   de fichiers que certaines installs HA OS n'exposent pas au tableau de
+   bord » — vrai, mais peut-être mieux résolu en documentant mieux l'option
+   du code en clair qu'en inventant un nouveau format de fichier de config.
+
+**État.** Pas commencé. (1) est peu coûteux et vaut la peine dans tous les
+cas ; (2) a besoin d'être cadré avant qu'aucun code ne soit écrit.
+
+---
+
 *Si vous comptez travailler sur l'un de ces sujets, ouvrir une issue au
 préalable évite les efforts en double — surtout pour les sujets 1 et 2, dont les
 détails protocolaires restent à confirmer sur du matériel réel.*

@@ -90,6 +90,14 @@ qui permet à Home Assistant de router le Bluetooth vers la boîte.
    automatiquement (son UUID de service est déclaré dans le manifest). Sinon,
    *Ajouter une intégration → Boks*.
 
+À ce stade, vous avez l'état de la porte, la batterie et les diagnostics —
+en lecture seule, rien d'autre à configurer. **Vous voulez aussi pouvoir
+ouvrir la boîte depuis Home Assistant ?** C'est une étape séparée et
+volontaire — rien ne l'active en installant seulement l'intégration. Voir
+[Ouvrir la porte](#ouvrir-la-porte) : sans cette étape, le bouton
+**Ouvrir** n'existe tout simplement pas encore, ce qui est normal, pas le
+signe que quelque chose est cassé.
+
 ## Maintenir le lien
 
 Le switch **Connexion maintenue** est l'arbitrage central de cette intégration,
