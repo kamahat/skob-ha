@@ -92,6 +92,41 @@ IDF v5.5).
   port U.FL, ce qui y est correctement embroché est l'antenne. Coincé sur
   l'antenne de série en attendant un pigtail au bon micro-connecteur.
 
+**Suite le même jour, en creusant la connexion GATT à ~10s (voir la PR #4 pour le détail complet) :**
+
+- **La coexistence WiFi/BLE confirmée comme un vrai coût, pas juste une
+  intuition.** La doc Espressif confirme que la C5 a une **seule chaîne
+  RF** partagée entre WiFi et BLE, arbitrée en time-division même si les
+  deux ne se percutent jamais en spectre (WiFi 5 GHz vs BLE 2,4 GHz).
+  Favoriser l'arbitre avec `esp_coex_preference_set(ESP_COEX_PREFER_BT)`
+  a fait passer le temps de connexion à la boîte de ~10s à ~5,4s.
+- **L'intervalle de connexion a compté encore plus.** L'intervalle
+  200-400ms réglé pour *maintenir* un lien (S3, économie de batterie)
+  convient mal à une *découverte ponctuelle rapide* — la découverte GATT
+  enchaîne des dizaines d'allers-retours ATT séquentiels, chacun borné
+  par environ un intervalle. Passer à un intervalle serré 30-50ms/
+  latence 0 spécifiquement pour la C5 a fait descendre le temps
+  connexion-jusqu'au-début-de-découverte à **~1,4s**.
+- **Le vrai blocage : `discoverAttributes()` plante lui-même** contre la
+  vraie boîte, sur toutes les variantes d'intervalle/timing testées — y
+  compris la rapide, où ça échoue désormais presque immédiatement plutôt
+  que près d'une limite de timeout. Ça écarte l'hypothèse initiale du
+  « timeout d'inactivité 30s de la boîte qui coupe en pleine
+  découverte » : c'est maintenant trop rapide pour que ce soit ça. Une
+  tentative de logs NimBLE en debug pour voir plus de détail s'est
+  retournée contre nous — la surcharge du logging a elle-même épuisé la
+  mémoire du contrôleur BLE (`NimBLEScan: Error starting scan; rc=519`,
+  erreur HCI Memory Capacity Exceeded) avant qu'on puisse observer quoi
+  que ce soit d'utile. **Non résolu** — il faudrait un vrai core dump ou
+  une session gdb série pour voir le fautif ; hors de portée sans une
+  vraie passe de debug NimBLE.
+
+Bilan de cette session : le temps de connexion à la boîte est passé d'un
+échec pur et simple (NO_AP_FOUND / jamais de 5 GHz atteint) à une
+connexion fiable en ~1,4s — un vrai progrès — mais la découverte des
+services GATT, la raison d'être de la connexion, ne survit toujours pas
+sur cette cible. La PR firmware #4 reste en draft.
+
 ## Ports USB — le piège classique
 
 La plupart des cartes ESP32-S3 exposent **deux ports USB-C**, au comportement

@@ -87,6 +87,37 @@ IDF v5.5).
   the stock antenna until a matching micro-connector pigtail is
   sourced.
 
+**Follow-up the same day, chasing the ~10s GATT connect (see PR #4 for full detail):**
+
+- **WiFi/BLE coexistence confirmed as a real cost, not just a hunch.**
+  Espressif's own docs confirm the C5 has a **single RF chain** shared
+  between WiFi and BLE, time-division arbitrated even though the two
+  never collide in spectrum (5 GHz WiFi vs 2.4 GHz BLE). Biasing the
+  arbiter with `esp_coex_preference_set(ESP_COEX_PREFER_BT)` cut the
+  mailbox connect time from ~10s to ~5.4s.
+- **Connection interval mattered even more.** The 200-400 ms interval
+  tuned for *holding* a link (S3, battery-saving) is a poor fit for a
+  *fast one-shot discovery* — GATT discovery is dozens of sequential
+  ATT round trips, each bound by roughly one interval. Switching to a
+  tight 30-50 ms/latency-0 interval for the C5 specifically dropped
+  connect-to-discovery-start further to **~1.4s**.
+- **The real blocker: `discoverAttributes()` itself crashes** against
+  the actual mailbox, on every interval/timing variant tried — including
+  the fast one, where it now fails almost immediately rather than near
+  any timeout boundary. Ruled out the "mailbox's 30s idle-disconnect
+  fires mid-discovery" theory this pointed to initially: too fast now
+  for that to be it. A NimBLE debug-logging attempt to see more detail
+  backfired — the logging overhead itself exhausted BLE controller
+  memory (`NimBLEScan: Error starting scan; rc=519`, HCI Memory
+  Capacity Exceeded) before anything useful could be observed.
+  **Unresolved** — needs a core dump or serial gdb session to actually
+  see the fault; out of reach without a NimBLE-level debugging pass.
+
+Net for this session: mailbox connect time went from failing outright
+(NO_AP_FOUND / never reaching 5 GHz) to a reliable ~1.4s connect — real
+progress — but GATT service discovery, the actual point of connecting,
+still doesn't survive on this target. Firmware PR #4 stays in draft.
+
 ## USB ports — a common pitfall
 
 Most ESP32-S3 devkits expose **two USB-C ports**, and they do not behave alike:
