@@ -27,6 +27,7 @@
           "keepalive": "Intervalle de keepalive",
           "reconnect_max": "Delai maximal entre deux tentatives de reconnexion",
           "open_code": "Code d'ouverture (optionnel)",
+          "config_key": "Config Key (optionnel)",
           "refresh_interval": "Intervalle de rafraichissement (minutes, 0 = desactive)"
         },
         "data_description": {
@@ -34,12 +35,14 @@
           "keepalive": "La Boks ferme la connexion apres environ 30 s de silence. Augmenter cette valeur reduit les echanges (et donc la consommation) quand le lien est maintenu, mais rapproche du seuil de coupure : au-dela, le lien tombe et se reconnecte en boucle, ce qui consomme davantage.",
           "reconnect_max": "Plafond du delai qui double a chaque echec. Une valeur elevee menage les piles quand la Boks est hors de portee ; une valeur basse raccourcit le retour en ligne.",
           "open_code": "Le code lui-meme (6 caracteres sur l'alphabet 0123456789AB), ou une reference vers secrets.yaml sous la forme : !secret boks_code1 — recommande, le code reste alors dans le fichier prevu pour les secrets. Renseigner ce champ fait apparaitre un bouton Ouvrir : quiconque a acces a Home Assistant pourra alors ouvrir la boite. Laisser vide garde l'integration strictement en lecture. Utilisez un code permanent (code maitre ou code fixe) : un code a usage unique ne fonctionnerait qu'une fois.",
+          "config_key": "8 caracteres hexadecimaux (la Config Key de votre boite, recuperable depuis votre compte), ou une reference vers secrets.yaml : !secret boks_config_key. Renseigner ce champ active les fonctions d'ADMINISTRATION : enroler/revoquer un badge Mifare et activer le VIGIK. C'est un secret plus puissant que le code d'ouverture — quiconque a acces a Home Assistant pourra alors inscrire son propre badge. Laisser vide n'expose aucune de ces fonctions.",
           "refresh_interval": "Toutes les N minutes, l'historique (dernieres ouvertures VIGIK / code) est relu — que le lien soit maintenu (re-demande dans la meme session, sinon l'historique n'est lu qu'une seule fois a la connexion) ou non (une breve connexion dediee). But : reproduire la surveillance continue du dongle BoksLINK officiel, mais vers Home Assistant plutot que vers le cloud Boks. 0 desactive. ATTENTION : lire l'historique DRAINE le journal de la boite (curseur persistant, qui sert de backlog au dongle officiel hors ligne) — un drain regulier risque de faire perdre des ouvertures a l'historique cloud officiel s'il redevient actif. Choix explicite."
         }
       }
     },
     "error": {
       "invalid_open_code": "Code invalide : 6 caracteres, uniquement 0-9, A et B.",
+      "invalid_config_key": "Config Key invalide : exactement 8 caracteres hexadecimaux (0-9, A-F).",
       "unknown_secret": "Cette cle est introuvable dans secrets.yaml (ou ne contient pas de texte)."
     }
   }

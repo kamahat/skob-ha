@@ -7,9 +7,11 @@ Le checksum est la somme des octets de la trame hors checksum, masquée sur 8 bi
 from __future__ import annotations
 
 import logging
+import re
 
 from .const import (
     ALLOWED_TX_OPCODES,
+    CONFIG_KEY_LENGTH,
     NFC_TAGTYPE_MIFARE,
     NFC_TAGTYPE_VIGIK,
     OPCODE_ASK_DOOR_STATUS,
@@ -17,7 +19,11 @@ from .const import (
     OPCODE_LOG_CODE_KEY_VALID,
     OPCODE_LOG_NFC_OPENING,
     OPCODE_OPEN_DOOR,
+    OPCODE_REGISTER_NFC_TAG,
+    OPCODE_REGISTER_NFC_TAG_SCAN_START,
     OPCODE_REQUEST_LOGS,
+    OPCODE_SET_CONFIGURATION,
+    OPCODE_UNREGISTER_NFC_TAG,
     PIN_ALPHABET,
     PIN_LENGTH,
 )
@@ -101,6 +107,78 @@ def normalize_pin(pin: str) -> str:
 def build_open_door_frame(pin: str) -> bytes:
     """Construit la commande d'ouverture pour un code donné."""
     return build_frame(OPCODE_OPEN_DOOR, normalize_pin(pin).encode("ascii"))
+
+
+def normalize_config_key(key: str) -> str:
+    """Valide et normalise une Config Key : exactement 8 caractères hexadécimaux.
+
+    Vérifiée ici plutôt qu'à l'usage : une clé mal formée produirait une trame
+    que la boîte refuse en ``225 UNAUTHORIZED``, sans indice clair.
+    """
+    candidate = key.strip().upper()
+    if not re.fullmatch(rf"[0-9A-F]{{{CONFIG_KEY_LENGTH}}}", candidate):
+        raise ValueError(
+            f"une Config Key fait {CONFIG_KEY_LENGTH} caractères hexadécimaux"
+        )
+    return candidate
+
+
+# --- Trames d'administration NFC / VIGIK -----------------------------------
+# Formats reversés de l'app officielle (cf. docs/02). La Config Key part **en
+# ASCII** dans le payload. Points non évidents, à ne PAS « corriger » :
+#   - SCAN_START n'a NI préfixe 0x00 NI checksum (le 0x00 du SDK communautaire
+#     décalait la clé et causait le 225) ;
+#   - register/unregister terminent par l'octet d'opcode (pas une somme) ;
+#   - set_configuration termine par (opcode + type + flag) & 0xFF.
+# Ces builders sont dédiés (hors `build_frame`) et gatés par le coordinateur sur
+# la présence d'une Config Key.
+
+
+def build_scan_start_frame(config_key: str) -> bytes:
+    """``REGISTER_NFC_TAG_SCAN_START`` (23) : ``[23, 8, …ASCII(clé)]``."""
+    key = normalize_config_key(config_key).encode("ascii")
+    return bytes([OPCODE_REGISTER_NFC_TAG_SCAN_START, len(key)]) + key
+
+
+def build_register_nfc_frame(config_key: str, uid: bytes) -> bytes:
+    """``REGISTER_NFC_TAG`` (24) : ``[24, 9+U, …ASCII(clé), U, …uid, 24]``."""
+    key = normalize_config_key(config_key).encode("ascii")
+    op = OPCODE_REGISTER_NFC_TAG
+    return (
+        bytes([op, len(key) + 1 + len(uid)]) + key + bytes([len(uid)]) + uid + bytes([op])
+    )
+
+
+def build_unregister_nfc_frame(config_key: str, uid: bytes) -> bytes:
+    """``UNREGISTER_NFC_TAG`` (25) : même structure que register, opcode 25."""
+    key = normalize_config_key(config_key).encode("ascii")
+    op = OPCODE_UNREGISTER_NFC_TAG
+    return (
+        bytes([op, len(key) + 1 + len(uid)]) + key + bytes([len(uid)]) + uid + bytes([op])
+    )
+
+
+def build_set_configuration_frame(
+    config_key: str, config_type: int, enabled: bool
+) -> bytes:
+    """``SET_CONFIGURATION`` (22) : ``[22, 10, …ASCII(clé), type, flag, cksum]``.
+
+    ``cksum = (22 + type + flag) & 0xFF`` (ni la clé ni la longueur ne comptent —
+    c'est le calcul exact de l'app).
+    """
+    key = normalize_config_key(config_key).encode("ascii")
+    op = OPCODE_SET_CONFIGURATION
+    flag = 1 if enabled else 0
+    body = bytes([op, len(key) + 2]) + key + bytes([config_type, flag])
+    return body + bytes([(op + config_type + flag) & 0xFF])
+
+
+def parse_uid(uid_hex: str) -> bytes:
+    """Convertit un UID hexadécimal (``04A1B2C3`` ou ``04:A1:B2:C3``) en octets."""
+    cleaned = re.sub(r"[\s:]", "", uid_hex).upper()
+    if not re.fullmatch(r"(?:[0-9A-F]{2})+", cleaned):
+        raise ValueError("UID invalide : attendu des octets hexadécimaux")
+    return bytes.fromhex(cleaned)
 
 
 def parse_frame(data: bytes) -> tuple[int, bytes] | None:

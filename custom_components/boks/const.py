@@ -54,6 +54,49 @@ OPCODE_OPEN_DOOR: Final = 1
 OPCODE_VALID_OPEN_CODE: Final = 129
 OPCODE_INVALID_OPEN_CODE: Final = 130
 
+# --- Administration NFC / VIGIK (authentifié par Config Key) ----------------
+# Enregistrer/révoquer un badge Mifare et activer le VIGIK. Ces opérations
+# s'authentifient par la **Config Key** (8 hex), transmise **en ASCII** dans le
+# payload — format reversé de l'app officielle (cf. docs/02). Pas de session
+# chiffrée : le lien reste en clair, seul le format compte. Un `0x00` parasite
+# (présent dans le SDK communautaire) décalait la clé → 225 UNAUTHORIZED ; le
+# format correct n'a ni ce préfixe ni checksum pour SCAN_START.
+OPCODE_SET_CONFIGURATION: Final = 22
+OPCODE_REGISTER_NFC_TAG_SCAN_START: Final = 23
+OPCODE_REGISTER_NFC_TAG: Final = 24
+OPCODE_UNREGISTER_NFC_TAG: Final = 25
+#: Réponses de la boîte aux opérations NFC.
+OPCODE_NOTIFY_NFC_TAG_FOUND: Final = 197
+OPCODE_ERROR_NFC_TAG_ALREADY_EXISTS_SCAN: Final = 198
+OPCODE_ERROR_NFC_SCAN_TIMEOUT: Final = 199
+OPCODE_NOTIFY_NFC_TAG_REGISTERED: Final = 200
+OPCODE_NOTIFY_NFC_TAG_REGISTERED_ERROR_ALREADY_EXISTS: Final = 201
+OPCODE_NOTIFY_NFC_TAG_UNREGISTERED: Final = 202
+OPCODE_ERROR_UNAUTHORIZED: Final = 225
+#: Réponses aux opérations NFC/admin — routées vers la Future en attente.
+NFC_RESPONSE_OPCODES: Final = frozenset(
+    {
+        OPCODE_NOTIFY_NFC_TAG_FOUND,
+        OPCODE_ERROR_NFC_TAG_ALREADY_EXISTS_SCAN,
+        OPCODE_ERROR_NFC_SCAN_TIMEOUT,
+        OPCODE_NOTIFY_NFC_TAG_REGISTERED,
+        OPCODE_NOTIFY_NFC_TAG_REGISTERED_ERROR_ALREADY_EXISTS,
+        OPCODE_NOTIFY_NFC_TAG_UNREGISTERED,
+        OPCODE_ERROR_UNAUTHORIZED,
+    }
+)
+#: Type de configuration `SET_CONFIGURATION` pour le VIGIK (LaPosteNfc).
+NFC_CONFIG_TYPE_LAPOSTE: Final = 0x01
+#: Attente d'un badge présenté au clavier pendant l'enrôlement. La boîte a sa
+#: propre fenêtre de scan (~30 s) ; on attend un peu plus.
+NFC_SCAN_TIMEOUT: Final = 40.0
+#: Attente de l'accusé d'une écriture admin (register/unregister/config).
+ADMIN_ACK_TIMEOUT: Final = 30.0
+
+CONF_CONFIG_KEY: Final = "config_key"
+#: Longueur de la Config Key : exactement 8 caractères hexadécimaux.
+CONFIG_KEY_LENGTH: Final = 8
+
 #: Identifiant lisible de la boîte (ex. « F540 »). La Boks ne l'expose pas :
 #: son Serial Number GATT (0x2A25) renvoie sa propre adresse MAC, et aucune
 #: characteristic ne porte cette référence — elle vient de l'étiquette ou du
@@ -73,13 +116,12 @@ PIN_LENGTH: Final = 6
 #: établir la connexion.
 OPEN_TIMEOUT: Final = 30.0
 
-# Périmètre volontairement restreint. L'intégration lit l'état de la boîte,
-# lit son historique (opérations de LECTURE), et — si l'utilisateur a configuré
-# un code — sait ouvrir la porte. Rien d'autre : aucune gestion de codes
-# (16-19), aucune modification de configuration (22), aucun provisioning
-# (32-33). Ces opérations exigent la Config Key / Master Key du propriétaire et
-# sont, pour certaines, irréversibles — le constructeur de trames refuse leurs
-# opcodes par construction, pas par convention.
+# Périmètre du constructeur de trames **générique** (`build_frame`) : lecture +
+# ouverture. Il refuse tout autre opcode par construction. Les opérations d'admin
+# NFC/VIGIK (22-25) NE passent PAS par lui : elles ont des constructeurs dédiés
+# (`build_scan_start_frame`…), appelés uniquement par le coordinateur **quand une
+# Config Key est configurée**. Gestion de codes (16-19) et provisioning (32-33)
+# restent, eux, hors d'atteinte.
 ALLOWED_TX_OPCODES: Final = frozenset(
     {
         OPCODE_ASK_DOOR_STATUS,

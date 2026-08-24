@@ -27,6 +27,7 @@
           "keepalive": "Keepalive interval",
           "reconnect_max": "Maximum delay between reconnection attempts",
           "open_code": "Open code (optional)",
+          "config_key": "Config Key (optional)",
           "refresh_interval": "Refresh interval (minutes, 0 = off)"
         },
         "data_description": {
@@ -34,12 +35,14 @@
           "keepalive": "The Boks closes the connection after about 30 s of silence. A longer interval means fewer exchanges (and lower power draw) while the link is held, but moves closer to that cutoff: beyond it the link drops and reconnects in a loop, which costs more.",
           "reconnect_max": "Ceiling for the delay, which doubles on every failure. A high value spares the batteries while the Boks is out of range; a low one shortens the time to come back online.",
           "open_code": "Either the code itself (6 characters over the alphabet 0123456789AB), or a reference to secrets.yaml written as: !secret boks_code1 — recommended, so the code stays in the file meant for secrets. Filling this in adds an Open button: anyone with access to Home Assistant will then be able to open the mailbox. Leaving it empty keeps the integration strictly read-only. Use a permanent code (master or fixed) — a single-use code would work exactly once.",
+          "config_key": "8 hexadecimal characters (your mailbox's Config Key, retrievable from your account), or a secrets.yaml reference: !secret boks_config_key. Filling this in enables the ADMIN functions: enrol/revoke a Mifare badge and toggle VIGIK. This is a more powerful secret than the open code — anyone with access to Home Assistant could then enrol their own badge. Leaving it empty exposes none of these functions.",
           "refresh_interval": "Every N minutes, history (last VIGIK / code openings) is re-read — whether the link is held (re-requested within the same session, since otherwise history is only read once at connect) or not (a dedicated short connection). Goal: mirror the official BoksLINK dongle's continuous monitoring, but reporting to Home Assistant instead of the Boks cloud. 0 disables it. WARNING: reading history DRAINS the box log (persistent cursor, which serves as the offline backlog for the official dongle) — regular draining may cause openings to be lost from the official cloud history if it comes back online. An explicit choice."
         }
       }
     },
     "error": {
       "invalid_open_code": "Invalid code: 6 characters, only 0-9, A and B.",
+      "invalid_config_key": "Invalid Config Key: exactly 8 hexadecimal characters (0-9, A-F).",
       "unknown_secret": "That key was not found in secrets.yaml (or holds no text)."
     }
   }

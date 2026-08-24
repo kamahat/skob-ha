@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -33,11 +33,22 @@ from .const import (
     FIRMWARE_UUID,
     HISTORY_EVENT_OPCODES,
     KEEPALIVE_INTERVAL,
+    ADMIN_ACK_TIMEOUT,
+    NFC_CONFIG_TYPE_LAPOSTE,
+    NFC_RESPONSE_OPCODES,
+    NFC_SCAN_TIMEOUT,
     NOTIFY_UUID,
     OPCODE_ANSWER_DOOR_STATUS,
+    OPCODE_ERROR_NFC_SCAN_TIMEOUT,
+    OPCODE_ERROR_NFC_TAG_ALREADY_EXISTS_SCAN,
+    OPCODE_ERROR_UNAUTHORIZED,
     OPCODE_INVALID_OPEN_CODE,
     OPCODE_LOG_END_HISTORY,
     OPCODE_NOTIFY_DOOR_STATUS,
+    OPCODE_NOTIFY_NFC_TAG_FOUND,
+    OPCODE_NOTIFY_NFC_TAG_REGISTERED,
+    OPCODE_NOTIFY_NFC_TAG_REGISTERED_ERROR_ALREADY_EXISTS,
+    OPCODE_NOTIFY_NFC_TAG_UNREGISTERED,
     OPCODE_VALID_OPEN_CODE,
     OPEN_TIMEOUT,
     RECONNECT_DELAY_MAX,
@@ -50,9 +61,14 @@ from .protocol import (
     GET_LOGS_COUNT_FRAME,
     REQUEST_LOGS_FRAME,
     build_open_door_frame,
+    build_register_nfc_frame,
+    build_scan_start_frame,
+    build_set_configuration_frame,
+    build_unregister_nfc_frame,
     door_is_open,
     history_opening,
     parse_frame,
+    parse_uid,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -60,6 +76,10 @@ _LOGGER = logging.getLogger(__name__)
 
 class BoksOpenError(HomeAssistantError):
     """L'ouverture n'a pas abouti — code refusé, hors de portée, ou silence."""
+
+
+class BoksAdminError(HomeAssistantError):
+    """Une opération d'administration (NFC/VIGIK) a échoué — voir le message."""
 
 
 @dataclass
@@ -105,6 +125,7 @@ class BoksLink:
         open_code: str | None = None,
         label: str | None = None,
         refresh_interval: int = 0,
+        config_key: str | None = None,
     ) -> None:
         self.hass = hass
         self.address = address
@@ -120,11 +141,20 @@ class BoksLink:
         #: Identifiant lisible saisi par l'utilisateur (ex. « F540 »). Sert à
         #: nommer l'appareil : sans lui, deux boîtes s'appelleraient « Boks ».
         self.label = label
+        #: Config Key du propriétaire (8 hex). Absente = pas de capacité d'admin
+        #: NFC/VIGIK exposée, et le lien reste incapable de ces écritures.
+        self.config_key = config_key
         #: Résultat attendu d'un OPEN_DOOR en cours (129/130).
         self._open_result: asyncio.Future[bool] | None = None
+        #: Réponse NFC/admin en attente (opcode, payload) — cf. NFC_RESPONSE_OPCODES.
+        self._nfc_result: asyncio.Future[tuple[int, bytes]] | None = None
         #: Sérialise les ouvertures : deux commandes concurrentes se
         #: voleraient mutuellement la réponse.
         self._open_lock = asyncio.Lock()
+        #: Sérialise les opérations d'admin (une seule à la fois).
+        self._admin_lock = asyncio.Lock()
+        #: UID saisi dans l'entité texte, consommé par le bouton « Révoquer ».
+        self.pending_unregister_uid: str = ""
         self.state = BoksState()
         self._client: BleakClientWithServiceCache | None = None
         self._listeners: list[Callable[[], None]] = []
@@ -436,6 +466,185 @@ class BoksLink:
             except (BleakError, EOFError) as err:
                 _LOGGER.debug("déconnexion après ouverture: %s", err)
 
+    # --- Administration NFC / VIGIK (authentifié par Config Key) -----------
+
+    async def _async_admin_write(
+        self, client: BleakClientWithServiceCache, frame: bytes, timeout: float
+    ) -> tuple[int, bytes]:
+        """Écrit une trame d'admin et attend la réponse de la boîte.
+
+        La réponse (197-202/225) remonte par ``_on_app_notify`` dans
+        ``self._nfc_result``.
+        """
+        self._nfc_result = asyncio.get_running_loop().create_future()
+        await client.write_gatt_char(WRITE_UUID, frame, response=True)
+        return await asyncio.wait_for(asyncio.shield(self._nfc_result), timeout)
+
+    async def _async_admin_session(
+        self, body: Callable[[BleakClientWithServiceCache], Awaitable[None]]
+    ) -> None:
+        """Exécute ``body(client)`` sur une connexion, notifications souscrites.
+
+        Réutilise le lien maintenu s'il existe ; sinon ouvre une session
+        temporaire et la relâche après (comme pour l'ouverture).
+        """
+        if self._client is not None and self._client.is_connected:
+            await body(self._client)
+            return
+        device = bluetooth.async_ble_device_from_address(
+            self.hass, self.address, connectable=True
+        )
+        if device is None:
+            raise BoksAdminError(
+                f"{self.address} hors de portée d'un adaptateur/proxy connectable"
+            )
+        client: BleakClientWithServiceCache = await establish_connection(
+            BleakClientWithServiceCache,
+            device,
+            self.address,
+            self._on_disconnected,
+            use_services_cache=False,
+        )
+        self.state.last_connected = datetime.now(timezone.utc)
+        self._notify_listeners()
+        try:
+            await client.start_notify(NOTIFY_UUID, self._on_app_notify)
+            await body(client)
+        finally:
+            try:
+                await client.clear_cache()
+            except Exception as err:  # noqa: BLE001 - purement opportuniste
+                _LOGGER.debug("purge du cache GATT impossible: %s", err)
+            try:
+                await client.disconnect()
+            except (BleakError, EOFError) as err:
+                _LOGGER.debug("déconnexion après admin: %s", err)
+
+    @staticmethod
+    def _found_uid(payload: bytes) -> bytes:
+        """UID d'un ``NOTIFY_NFC_TAG_FOUND`` (197) : ``[uidLen][uid…]``."""
+        if not payload:
+            raise BoksAdminError("réponse de scan sans UID")
+        n = payload[0]
+        uid = payload[1 : 1 + n]
+        if n == 0 or len(uid) != n:
+            raise BoksAdminError("UID de badge incomplet dans la réponse")
+        return bytes(uid)
+
+    async def async_register_nfc_tag(self) -> dict[str, str]:
+        """Enrôle un badge : ``SCAN_START`` → présentation → ``REGISTER``.
+
+        Renvoie ``{'uid': '<hex>', 'status': 'registered'|'already'}``. Lève
+        ``BoksAdminError`` (affichée à l'utilisateur) sur refus, timeout ou
+        absence de badge.
+        """
+        if not self.config_key:
+            raise BoksAdminError("aucune Config Key n'est configurée")
+        outcome: dict[str, str] = {}
+
+        async def body(client: BleakClientWithServiceCache) -> None:
+            opcode, payload = await self._async_admin_write(
+                client, build_scan_start_frame(self.config_key), NFC_SCAN_TIMEOUT
+            )
+            if opcode == OPCODE_ERROR_UNAUTHORIZED:
+                raise BoksAdminError("Config Key refusée par la boîte (225)")
+            if opcode == OPCODE_ERROR_NFC_SCAN_TIMEOUT:
+                raise BoksAdminError(
+                    "aucun badge présenté à temps — appuyez sur une touche du "
+                    "clavier puis présentez le badge"
+                )
+            if opcode == OPCODE_ERROR_NFC_TAG_ALREADY_EXISTS_SCAN:
+                raise BoksAdminError("ce badge est déjà enregistré")
+            if opcode != OPCODE_NOTIFY_NFC_TAG_FOUND:
+                raise BoksAdminError(f"réponse inattendue au scan (opcode {opcode})")
+            uid = self._found_uid(payload)
+            outcome["uid"] = uid.hex().upper()
+            op2, _ = await self._async_admin_write(
+                client, build_register_nfc_frame(self.config_key, uid), ADMIN_ACK_TIMEOUT
+            )
+            if op2 == OPCODE_NOTIFY_NFC_TAG_REGISTERED:
+                outcome["status"] = "registered"
+            elif op2 == OPCODE_NOTIFY_NFC_TAG_REGISTERED_ERROR_ALREADY_EXISTS:
+                outcome["status"] = "already"
+            elif op2 == OPCODE_ERROR_UNAUTHORIZED:
+                raise BoksAdminError("Config Key refusée par la boîte (225)")
+            else:
+                raise BoksAdminError(f"échec de l'enregistrement (opcode {op2})")
+
+        async with self._admin_lock:
+            try:
+                await self._async_admin_session(body)
+            except (BleakError, EOFError) as err:
+                raise BoksAdminError(f"échec de la liaison: {err}") from err
+            except TimeoutError as err:
+                raise BoksAdminError("la boîte n'a pas répondu à temps") from err
+            finally:
+                self._nfc_result = None
+        _LOGGER.info(
+            "badge %s %s sur %s", outcome.get("uid"), outcome.get("status"), self.address
+        )
+        return outcome
+
+    async def async_unregister_nfc_tag(self, uid_hex: str) -> None:
+        """Révoque un badge par son UID hexadécimal."""
+        if not self.config_key:
+            raise BoksAdminError("aucune Config Key n'est configurée")
+        try:
+            uid = parse_uid(uid_hex)
+        except ValueError as err:
+            raise BoksAdminError(str(err)) from err
+
+        async def body(client: BleakClientWithServiceCache) -> None:
+            opcode, _ = await self._async_admin_write(
+                client, build_unregister_nfc_frame(self.config_key, uid), ADMIN_ACK_TIMEOUT
+            )
+            if opcode == OPCODE_NOTIFY_NFC_TAG_UNREGISTERED:
+                return
+            if opcode == OPCODE_ERROR_UNAUTHORIZED:
+                raise BoksAdminError("Config Key refusée par la boîte (225)")
+            raise BoksAdminError(f"échec de la révocation (opcode {opcode})")
+
+        async with self._admin_lock:
+            try:
+                await self._async_admin_session(body)
+            except (BleakError, EOFError) as err:
+                raise BoksAdminError(f"échec de la liaison: {err}") from err
+            except TimeoutError as err:
+                raise BoksAdminError("la boîte n'a pas répondu à temps") from err
+            finally:
+                self._nfc_result = None
+        _LOGGER.info("badge %s révoqué sur %s", uid.hex().upper(), self.address)
+
+    async def async_set_vigik(self, enabled: bool) -> None:
+        """Active/désactive le VIGIK (``SET_CONFIGURATION`` type LaPosteNfc).
+
+        Un refus d'auth remonte en ``225``. L'accusé positif exact n'étant pas
+        encore confirmé sur matériel, on ne fait PAS échouer sur un silence :
+        seul un ``225`` est traité comme une erreur.
+        """
+        if not self.config_key:
+            raise BoksAdminError("aucune Config Key n'est configurée")
+        frame = build_set_configuration_frame(
+            self.config_key, NFC_CONFIG_TYPE_LAPOSTE, enabled
+        )
+
+        async def body(client: BleakClientWithServiceCache) -> None:
+            try:
+                opcode, _ = await self._async_admin_write(client, frame, ADMIN_ACK_TIMEOUT)
+            except TimeoutError:
+                return  # pas d'accusé explicite connu → silence ≠ échec
+            if opcode == OPCODE_ERROR_UNAUTHORIZED:
+                raise BoksAdminError("Config Key refusée par la boîte (225)")
+
+        async with self._admin_lock:
+            try:
+                await self._async_admin_session(body)
+            except (BleakError, EOFError) as err:
+                raise BoksAdminError(f"échec de la liaison: {err}") from err
+            finally:
+                self._nfc_result = None
+        _LOGGER.info("VIGIK %s sur %s", "activé" if enabled else "désactivé", self.address)
+
     async def _async_cancel_runner(self) -> None:
         self._stop.set()
         if self._runner is not None:
@@ -695,6 +904,11 @@ class BoksLink:
         if opcode in (OPCODE_VALID_OPEN_CODE, OPCODE_INVALID_OPEN_CODE):
             if self._open_result is not None and not self._open_result.done():
                 self._open_result.set_result(opcode == OPCODE_VALID_OPEN_CODE)
+            return
+        # Réponses aux opérations d'admin NFC/VIGIK → Future en attente.
+        if opcode in NFC_RESPONSE_OPCODES:
+            if self._nfc_result is not None and not self._nfc_result.done():
+                self._nfc_result.set_result((opcode, payload))
             return
         # Pendant une lecture d'historique, la boîte streame ses événements ici.
         if self._history is not None and opcode in HISTORY_EVENT_OPCODES:

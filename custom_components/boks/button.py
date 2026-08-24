@@ -7,23 +7,33 @@ capacité, plutôt qu'un bouton présent qui échouerait à l'usage.
 """
 from __future__ import annotations
 
+import logging
+
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
-from .coordinator import BoksLink
+from .coordinator import BoksAdminError, BoksLink
 from .entity import BoksEntity
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    """Ajoute le bouton d'ouverture, si un code est configuré."""
+    """Ajoute le bouton d'ouverture (si code) et l'admin NFC (si Config Key)."""
     link: BoksLink = hass.data[DOMAIN][entry.entry_id]
+    entities: list[ButtonEntity] = []
     if link.open_code:
-        async_add_entities([BoksOpenDoorButton(link)])
+        entities.append(BoksOpenDoorButton(link))
+    if link.config_key:
+        entities.append(BoksRegisterNfcButton(link))
+        entities.append(BoksUnregisterNfcButton(link))
+    async_add_entities(entities)
 
 
 class BoksOpenDoorButton(BoksEntity, ButtonEntity):
@@ -54,3 +64,52 @@ class BoksOpenDoorButton(BoksEntity, ButtonEntity):
         au lieu de les enterrer dans le journal.
         """
         await self._link.async_open_door()
+
+
+class BoksRegisterNfcButton(BoksEntity, ButtonEntity):
+    """Enrôle un badge Mifare (n'existe que si une Config Key est configurée).
+
+    L'appui lance le scan d'enrôlement : présentez alors un badge au clavier
+    (appui touche puis badge). Le résultat — ou l'erreur (badge non présenté à
+    temps, clé refusée…) — est remonté à l'utilisateur.
+    """
+
+    _attr_icon = "mdi:nfc-tap"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, link: BoksLink) -> None:
+        super().__init__(link, "register_nfc")
+        self._attr_name = "Enrôler un badge"
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    async def async_press(self) -> None:
+        result = await self._link.async_register_nfc_tag()
+        _LOGGER.info(
+            "badge %s : %s", result.get("uid"), result.get("status")
+        )
+
+
+class BoksUnregisterNfcButton(BoksEntity, ButtonEntity):
+    """Révoque le badge dont l'UID est saisi dans l'entité « UID à révoquer »."""
+
+    _attr_icon = "mdi:nfc-variant-off"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, link: BoksLink) -> None:
+        super().__init__(link, "unregister_nfc")
+        self._attr_name = "Révoquer le badge"
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    async def async_press(self) -> None:
+        uid = (self._link.pending_unregister_uid or "").strip()
+        if not uid:
+            raise BoksAdminError(
+                "renseignez d'abord l'UID du badge dans « UID à révoquer »"
+            )
+        await self._link.async_unregister_nfc_tag(uid)

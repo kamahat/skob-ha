@@ -15,7 +15,7 @@
   "requirements": [
     "bleak-retry-connector>=3.5.0"
   ],
-  "version": "1.1.0",
+  "version": "1.2.0",
   "bluetooth": [
     {
       "service_uuid": "a7630001-f491-4f21-95ea-846ba586e361",

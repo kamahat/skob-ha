@@ -17,6 +17,7 @@ from .const import (
     CONF_ADDRESS,
     CONF_KEEPALIVE,
     CONF_LABEL,
+    CONF_CONFIG_KEY,
     CONF_OPEN_CODE,
     CONF_RECONNECT_MAX,
     CONF_REFRESH_INTERVAL,
@@ -35,6 +36,7 @@ PLATFORMS: list[Platform] = [
     Platform.BUTTON,
     Platform.SENSOR,
     Platform.SWITCH,
+    Platform.TEXT,
 ]
 
 
@@ -57,6 +59,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         open_code = None
 
+    # Config Key : même traitement tolérant que le code d'ouverture. Absente ou
+    # cassée = pas de capacité d'admin NFC/VIGIK, le reste fonctionne.
+    try:
+        config_key = await async_resolve(hass, entry.options.get(CONF_CONFIG_KEY))
+    except SecretError as err:
+        _LOGGER.error(
+            "Config Key introuvable (%s) — les fonctions d'administration "
+            "NFC/VIGIK ne seront pas exposées ; le reste fonctionne normalement",
+            err,
+        )
+        config_key = None
+
     link = BoksLink(
         hass,
         address,
@@ -67,6 +81,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         refresh_interval=int(
             entry.options.get(CONF_REFRESH_INTERVAL, REFRESH_INTERVAL_DEFAULT)
         ),
+        config_key=config_key,
     )
     try:
         await link.async_start()

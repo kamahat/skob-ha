@@ -24,6 +24,7 @@ from homeassistant.helpers import selector
 
 from .const import (
     CONF_ADDRESS,
+    CONF_CONFIG_KEY,
     CONF_KEEPALIVE,
     CONF_LABEL,
     CONF_OPEN_CODE,
@@ -41,7 +42,7 @@ from .const import (
     REFRESH_INTERVAL_MIN,
     SERVICE_UUID,
 )
-from .protocol import normalize_pin
+from .protocol import normalize_config_key, normalize_pin
 from .secret import SecretError, async_resolve, is_secret_ref
 
 
@@ -176,6 +177,25 @@ class BoksOptionsFlow(OptionsFlow):
                     user_input[CONF_OPEN_CODE] = normalize_pin(code)
                 except ValueError:
                     errors[CONF_OPEN_CODE] = "invalid_open_code"
+            # Config Key : même logique (secrets.yaml ou valeur directe). Absente
+            # = pas de capacité d'admin NFC/VIGIK exposée.
+            ckey = (user_input.get(CONF_CONFIG_KEY) or "").strip()
+            if not ckey:
+                user_input[CONF_CONFIG_KEY] = ""
+            elif is_secret_ref(ckey):
+                try:
+                    normalize_config_key(await async_resolve(self.hass, ckey))
+                except SecretError:
+                    errors[CONF_CONFIG_KEY] = "unknown_secret"
+                except ValueError:
+                    errors[CONF_CONFIG_KEY] = "invalid_config_key"
+                else:
+                    user_input[CONF_CONFIG_KEY] = ckey
+            else:
+                try:
+                    user_input[CONF_CONFIG_KEY] = normalize_config_key(ckey)
+                except ValueError:
+                    errors[CONF_CONFIG_KEY] = "invalid_config_key"
             if not errors:
                 return self.async_create_entry(data=user_input)
 
@@ -215,6 +235,14 @@ class BoksOptionsFlow(OptionsFlow):
                     vol.Optional(
                         CONF_OPEN_CODE,
                         default=options.get(CONF_OPEN_CODE, ""),
+                    ): selector.TextSelector(
+                        selector.TextSelectorConfig(
+                            type=selector.TextSelectorType.PASSWORD
+                        )
+                    ),
+                    vol.Optional(
+                        CONF_CONFIG_KEY,
+                        default=options.get(CONF_CONFIG_KEY, ""),
                     ): selector.TextSelector(
                         selector.TextSelectorConfig(
                             type=selector.TextSelectorType.PASSWORD
