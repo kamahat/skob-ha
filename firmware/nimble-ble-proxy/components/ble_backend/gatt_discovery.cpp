@@ -155,7 +155,13 @@ Status run(uint64_t address) {
 
   // Force a fresh walk so cached state from a prior session is rebuilt.
   // discoverAttributes() walks services → characteristics → descriptors.
-  if (!client->discoverAttributes()) {
+  // TEMP diagnostic marker: isolates whether a crash during discovery on
+  // the C5 happens inside discoverAttributes() itself (this "returned"
+  // line never appears) or in the encode/walk loop below it.
+  bool disc_ok = client->discoverAttributes();
+  ESP_LOGI(TAG, "discoverAttributes returned %d for %012llx", disc_ok,
+           static_cast<unsigned long long>(address));
+  if (!disc_ok) {
     ESP_LOGW(TAG, "discoverAttributes failed for %012llx",
              static_cast<unsigned long long>(address));
     emit_error(address, /*err=*/-2);

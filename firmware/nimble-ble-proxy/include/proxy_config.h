@@ -118,10 +118,34 @@ inline constexpr uint32_t DISCONNECT_TIMEOUT_MS = 10000;
 // (1+latency) * maxInterval * 2 = (1+4) * 400ms * 2 = 4000 ms — the 6000 ms
 // below gives 2000 ms of margin, and stays well under any peripheral
 // application watchdog measured in seconds).
+#if CONFIG_SOC_WIFI_SUPPORT_5G
+// esp32c5 override: GATT discovery (services -> characteristics ->
+// descriptors) is many sequential ATT request/response round trips, each
+// bound by roughly one connection interval — the ATT protocol allows only
+// one request in flight. At 200-400 ms/interval that's 9-15+ seconds just
+// in interval-bound latency for a device with a handful of services, on
+// top of WiFi/BLE coexistence overhead already measured to roughly double
+// connect time on this chip (see docs/hardware.md). Confirmed against the
+// real mailbox: discoverAttributes() never returns — the mailbox's own
+// ~30 s idle-disconnect fires mid-discovery and NimBLE doesn't recover
+// from that cleanly on this target, it crashes. Latency 0 so every
+// connection event is serviced immediately (needed while actively
+// exchanging, not just idle-keepalive) and a tight interval close to
+// NimBLE's own un-configured default (30-50 ms) so each round trip is
+// ~10x faster. Costs more of the mailbox's battery per session than the
+// S3's held-link tuning, but this proxy only holds the link for the
+// discovery burst, not continuously — unlike the "Holding the link"
+// scenario CONN_INTERVAL_MIN/MAX above are tuned for.
+inline constexpr uint16_t CONN_INTERVAL_MIN = 24;          // 30 ms
+inline constexpr uint16_t CONN_INTERVAL_MAX = 40;          // 50 ms
+inline constexpr uint16_t CONN_LATENCY = 0;                // service every event
+inline constexpr uint16_t CONN_SUPERVISION_TIMEOUT = 600;  // 6000 ms
+#else
 inline constexpr uint16_t CONN_INTERVAL_MIN = 160;    // 200 ms
 inline constexpr uint16_t CONN_INTERVAL_MAX = 320;    // 400 ms
 inline constexpr uint16_t CONN_LATENCY = 4;           // skip up to 4 events when idle
 inline constexpr uint16_t CONN_SUPERVISION_TIMEOUT = 600;  // 6000 ms
+#endif
 
 // API frame limits — matches ESPHome's MAX_MESSAGE_SIZE for plaintext.
 inline constexpr size_t MAX_MESSAGE_SIZE = 2048;

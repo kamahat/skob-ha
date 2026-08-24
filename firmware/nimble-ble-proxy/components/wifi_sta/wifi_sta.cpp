@@ -24,6 +24,9 @@
 #include "esp_netif.h"
 #include "esp_system.h"
 #include "esp_wifi.h"
+#if CONFIG_SOC_WIFI_SUPPORT_5G
+#include "esp_coexist.h"
+#endif
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/task.h"
@@ -115,6 +118,27 @@ void on_wifi_event(void * /*arg*/, esp_event_base_t base, int32_t id,
     if (band_err != ESP_OK) {
       ESP_LOGW(TAG, "esp_wifi_set_band_mode(5G_ONLY) failed: %s",
                esp_err_to_name(band_err));
+    }
+
+    // TEMP experiment: the C5 shares ONE RF chain between WiFi and BLE —
+    // confirmed via Espressif's own coexistence docs, time-division
+    // multiplexed by a priority arbiter even though WiFi (5 GHz) and BLE
+    // (2.4 GHz) never collide in spectrum. Default priority is BALANCE;
+    // the ~10 s BLE central-role connect time observed against the
+    // mailbox (vs a couple of seconds on the S3, which has no such
+    // arbiter to contend with) is the leading suspect for why HA's own
+    // connect-attempt budget times out before the link lands. This
+    // biases the arbiter toward BLE at some cost to WiFi throughput/
+    // latency — an acceptable trade here since WiFi only carries the
+    // proxy's own low-bandwidth dashboard/OTA/API traffic.
+    // esp_coex_preference_set() is deprecated upstream in favor of
+    // esp_coex_status_bit_set/clear, but is still present in IDF v5.5
+    // and is the fastest way to test whether this is actually the
+    // bottleneck before committing to the newer, more involved API.
+    esp_err_t coex_err = esp_coex_preference_set(ESP_COEX_PREFER_BT);
+    if (coex_err != ESP_OK) {
+      ESP_LOGW(TAG, "esp_coex_preference_set(BT) failed: %s",
+               esp_err_to_name(coex_err));
     }
 #endif
     esp_wifi_connect();

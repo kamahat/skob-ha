@@ -12,3 +12,11 @@
 # (http://192.168.4.1/ once the AP "<hostname>-setup" comes up) instead of
 # being hardcoded into a source file.
 CONFIG_NBP_AP_FALLBACK=y
+
+# NOTE: tried CONFIG_BT_NIMBLE_LOG_LEVEL_DEBUG / CONFIG_NIMBLE_CPP_LOG_LEVEL_DEBUG
+# here to chase a GATT-discovery crash — reverted. That build failed even
+# earlier, with "NimBLEScan: Error starting scan; rc=519" (HCI Memory
+# Capacity Exceeded) right at boot: the debug logging's own overhead
+# exhausted BLE controller memory before anything useful could be
+# observed. Heisenbug — don't re-enable without also raising controller
+# buffer counts.
