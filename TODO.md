@@ -246,7 +246,7 @@ flowchart TD
     check{"pool<br/>non-empty?"}
     empty["BoksOpenError<br/>&quot;no OTP codes left —<br/>add more via Configure&quot;"]
 
-    pop["pop 1st code from pool<br/>(FIFO, before sending)"]
+    peek["read 1st code from pool<br/>(FIFO, not removed yet)"]
     send["OPEN_DOOR frame<br/>sent to the mailbox"]
 
     resp{"response?"}
@@ -254,34 +254,35 @@ flowchart TD
     invalid["INVALID_OPEN_CODE"]
     timeout["silence / 30s timeout"]
 
-    committed["removal persisted<br/>to the Store"]
+    committed["removal persisted<br/>to the Store — only here"]
     doorOpen["door opens"]
-    fail["BoksOpenError<br/>code refused"]
-    failAmbig["BoksOpenError<br/>link dropped — code lost,<br/>not requeued"]
+    fail["BoksOpenError<br/>code refused — stays in pool"]
+    failAmbig["BoksOpenError<br/>link dropped — stays in pool,<br/>next press may replay it"]
 
     press --> check
     check -- no --> empty
-    check -- yes --> pop
-    pop --> send
-    pop -. "removed here, not on success —<br/>avoids replaying an already-accepted code" .-> committed
-    send --> resp
-    resp -- yes --> valid --> doorOpen
+    check -- yes --> peek --> send --> resp
+    resp -- yes --> valid --> committed --> doorOpen
     resp -- no --> invalid --> fail
     resp -- no --> timeout --> failAmbig
 
-    style pop stroke:#b7791f,stroke-width:2px
+    style committed stroke:#b7791f,stroke-width:2px
     style empty stroke:#c53030,stroke-width:2px
     style failAmbig stroke:#c53030,stroke-width:2px
 ```
 
-**Open question, not yet decided:** the pool removal happens **on send**,
-not on confirmed success. That avoids a used code staying in the pool and
-being replayed (guaranteed failure next press). The trade-off: if the link
-drops *before* the mailbox receives the frame, the code is wasted for
-nothing — the user pastes in another one, with no ambiguity about mailbox
-state. Leaning toward "waste a code" over "a pool that might lie about
-what's still usable", but this is a real judgment call someone should sign
-off on before it's implemented, not an obvious default.
+**Decided:** the pool removal happens **only on confirmed use**
+(`VALID_OPEN_CODE`), not on send — a code is removed *because* the mailbox
+used it, not because the integration attempted to. A refused code
+(`INVALID_OPEN_CODE`) stays in the pool as-is: this integration does not
+try to guess why it was refused. Residual risk, left open rather than
+engineered around: if the response is lost to a link drop after the
+mailbox actually accepted the code, the pool still shows it as available —
+the next press replays it, which the mailbox will now answer with
+`INVALID_OPEN_CODE` (safe: a loud, attributable failure, not a silent one),
+costing one wasted press rather than one wasted code. No stale-entry
+cleanup is planned for that case beyond what a user notices and removes by
+hand.
 
 Also needed: a diagnostic sensor (`sensor.boks_<id>_codes_otp_restants` /
 *OTP codes remaining*) — without it the pool empties silently until the

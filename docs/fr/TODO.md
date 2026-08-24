@@ -261,7 +261,7 @@ flowchart TD
     check{"pool<br/>non vide ?"}
     empty["BoksOpenError<br/>&quot;plus de code OTP —<br/>en ajouter via Configurer&quot;"]
 
-    pop["retire le 1er code du pool<br/>(FIFO, avant l'envoi)"]
+    peek["lit le 1er code du pool<br/>(FIFO, pas encore retiré)"]
     send["frame OPEN_DOOR<br/>envoyée à la boîte"]
 
     resp{"réponse ?"}
@@ -269,35 +269,36 @@ flowchart TD
     invalid["INVALID_OPEN_CODE"]
     timeout["silence / timeout 30s"]
 
-    committed["retrait persisté<br/>dans le Store"]
+    committed["retrait persisté<br/>dans le Store — seulement ici"]
     doorOpen["porte ouverte"]
-    fail["BoksOpenError<br/>code refusé"]
-    failAmbig["BoksOpenError<br/>lien coupé — code perdu,<br/>pas ré-ajouté au pool"]
+    fail["BoksOpenError<br/>code refusé — reste dans le pool"]
+    failAmbig["BoksOpenError<br/>lien coupé — reste dans le pool,<br/>le prochain appui peut le rejouer"]
 
     press --> check
     check -- non --> empty
-    check -- oui --> pop
-    pop --> send
-    pop -. "retiré ici, pas après succès —<br/>évite de rejouer un code déjà accepté" .-> committed
-    send --> resp
-    resp -- oui --> valid --> doorOpen
+    check -- oui --> peek --> send --> resp
+    resp -- oui --> valid --> committed --> doorOpen
     resp -- non --> invalid --> fail
     resp -- non --> timeout --> failAmbig
 
-    style pop stroke:#b7791f,stroke-width:2px
+    style committed stroke:#b7791f,stroke-width:2px
     style empty stroke:#c53030,stroke-width:2px
     style failAmbig stroke:#c53030,stroke-width:2px
 ```
 
-**Question ouverte, pas encore tranchée :** le retrait du pool a lieu **à
-l'envoi**, pas à la confirmation. Ça évite qu'un code déjà accepté reste
-dans le pool et soit rejoué (échec garanti au prochain appui). Le
-compromis : si le lien tombe *avant* que la boîte ait reçu la trame, le
-code est perdu pour rien — l'utilisateur en recolle un autre, sans
-ambiguïté sur l'état de la boîte. Penche vers « gaspiller un code » plutôt
-que « un pool qui pourrait mentir sur ce qui reste utilisable », mais
-c'est un vrai arbitrage à valider par quelqu'un avant l'implémentation, pas
-un défaut évident.
+**Tranché :** le retrait du pool a lieu **uniquement après usage confirmé**
+(`VALID_OPEN_CODE`), pas à l'envoi — un code est retiré *parce que* la
+boîte l'a utilisé, pas parce que l'intégration a tenté de l'utiliser. Un
+code refusé (`INVALID_OPEN_CODE`) reste dans le pool tel quel :
+l'intégration n'essaie pas de deviner pourquoi il a été refusé. Risque
+résiduel, laissé ouvert plutôt que contourné artificiellement : si la
+réponse est perdue suite à une coupure de lien après que la boîte ait
+réellement accepté le code, le pool continue de le montrer comme
+disponible — le prochain appui le rejoue, et la boîte répondra alors
+`INVALID_OPEN_CODE` (sans danger : un échec bruyant et attribuable, pas
+silencieux), au prix d'un appui gaspillé plutôt que d'un code gaspillé.
+Aucun nettoyage automatique d'entrée obsolète n'est prévu pour ce cas,
+au-delà de ce qu'un utilisateur remarque et retire lui-même.
 
 À prévoir aussi : un capteur de diagnostic
 (`sensor.boks_<id>_codes_otp_restants` / *Codes OTP restants*) — sans lui,
