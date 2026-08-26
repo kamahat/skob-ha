@@ -118,6 +118,30 @@ Net for this session: mailbox connect time went from failing outright
 progress — but GATT service discovery, the actual point of connecting,
 still doesn't survive on this target. Firmware PR #4 stays in draft.
 
+### C5 field test (2026-08-25, stock antenna, ~11 m + 1 wall)
+
+Same physical position used earlier the same night for a Pi4/noble comparison
+(that position measured **−97 dBm**, connect eventually succeeded there with
+noble/BlueZ). With the C5 running this firmware, **stock antenna**, at the
+identical position:
+
+- **Passive advertisement scan, 60 s, clean run (no connection errors): the
+  mailbox was never once seen.** `0/60s`, vs. the Pi4 which — imperfectly, but
+  genuinely — detected it at the same spot the same night.
+- This is a **passive scan result**, unrelated to the `discoverAttributes()`
+  crash above (no GATT connect attempted). It suggests the C5's stock-antenna
+  BLE receive sensitivity may be materially worse than the Pi4's, on top of
+  the already-documented WiFi/BLE coexistence cost.
+- Also observed: one connection attempt to the C5's own ESPHome API (WiFi,
+  not BLE) timed out outright (`TimeoutAPIError`) right after a prior
+  scan+disconnect sequence, while ping/TCP to the board stayed reachable —
+  general link fragility under combined load, consistent with the
+  coexistence findings above; a retry succeeded cleanly.
+
+**Blocked on hardware**: no antenna change was tested (the previously-tried
+Bingfu pigtail's connector doesn't mate — see above). **Paused, awaiting a
+correctly-matched MHF4 pigtail + antenna before the next attempt.**
+
 ## USB ports — a common pitfall
 
 Most ESP32-S3 devkits expose **two USB-C ports**, and they do not behave alike:
