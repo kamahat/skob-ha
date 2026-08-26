@@ -33,6 +33,7 @@ async def async_setup_entry(
     if link.config_key:
         entities.append(BoksRegisterNfcButton(link))
         entities.append(BoksUnregisterNfcButton(link))
+    entities.append(BoksRebootButton(link))
     async_add_entities(entities)
 
 
@@ -113,3 +114,36 @@ class BoksUnregisterNfcButton(BoksEntity, ButtonEntity):
                 "renseignez d'abord l'UID du badge dans « UID à révoquer »"
             )
         await self._link.async_unregister_nfc_tag(uid)
+
+
+class BoksRebootButton(BoksEntity, ButtonEntity):
+    """Redémarre la carte de la Boks.
+
+    Toujours présent (contrairement à Ouvrir/NFC, pas de secret requis) mais
+    classé en diagnostic : c'est une action de maintenance, pas un contrôle
+    du quotidien. Anti-rebond de 60 s côté coordinateur — le redémarrage
+    matériel prend au moins ~40 s, un second appui plus tôt n'aurait de toute
+    façon aucune chance d'aboutir.
+    """
+
+    _attr_icon = "mdi:restart"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, link: BoksLink) -> None:
+        super().__init__(link, "reboot")
+        self._attr_name = "Redémarrer"
+
+    @property
+    def available(self) -> bool:
+        """Toujours disponible : comme l'ouverture, n'exige pas un lien déjà établi."""
+        return True
+
+    async def async_press(self) -> None:
+        """Envoie la commande de redémarrage.
+
+        ``BoksRebootError`` remonte telle quelle : c'est une
+        ``HomeAssistantError``, donc Home Assistant l'affiche à l'utilisateur
+        (anti-rebond actif, ou échec de liaison) au lieu de l'enterrer dans
+        le journal.
+        """
+        await self._link.async_reboot()
