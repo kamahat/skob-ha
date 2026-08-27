@@ -289,11 +289,13 @@ Also needed: a diagnostic sensor (`sensor.boks_<id>_codes_otp_restants` /
 *OTP codes remaining*) — without it the pool empties silently until the
 first surprise failure.
 
-**Status.** Design drafted (this entry), not implemented. Blocked on: (a)
-someone signing off on the send-time-vs-confirm-time removal trade-off
-above, (b) normal review once code exists — same as any config-flow change,
-per subject 4's existing "config-flow / options-flow edge cases" item,
-which this migration now also feeds test cases into.
+**Status.** IMPLEMENTED (merged, unreleased — targets v1.2.0 alongside
+subject 1). Modes, v1→v2 migration and the OTP pool (with its *Codes
+remaining* diagnostic sensor) are all in `main`, together with an
+unrelated Diagnostic **reboot button** (opcode 6, 60 s cooldown) merged in
+the same window — see CHANGELOG.md. **Remaining:** none of this — modes,
+OTP, or reboot — has been exercised against a real box yet; a field test
+is the last gate before tagging a release.
 
 *If you plan to work on any of these, opening an issue first avoids duplicate
 effort — especially for subjects 1 and 2, whose protocol details still need to

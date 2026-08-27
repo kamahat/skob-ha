@@ -13,6 +13,24 @@ follows [Semantic Versioning](https://semver.org/).
   by UID (*UID to revoke* text + *Revoke the badge* button), and a **VIGIK**
   switch (La Poste access). Without a Config Key none of these entities exist
   and the transmit path is unchanged. See the README's *NFC administration*.
+- **Explicit open-code modes**: the opening code is now configured through a
+  dedicated `open_code_mode` field (*none / direct / secret / one-time codes*)
+  instead of being inferred from whether the value looked like a `!secret`
+  reference. Existing entries migrate automatically (v1 → v2, config entry
+  migration) with no user action needed. **One-time codes (OTP)**: paste a
+  list of single-use codes; each is consumed only after the box confirms the
+  opening (`VALID_OPEN_CODE`), never on send — a *Codes remaining* diagnostic
+  sensor tracks the pool. See TODO.md for the full design.
+- **Reboot button** (Diagnostic category): sends the board-reset opcode.
+  Always available — unlike the other buttons it needs neither an opening
+  code nor a Config Key. A 60 s cooldown guards against repeated presses: the
+  physical reboot takes at least ~40 s, so a second press within that window
+  can't do anything useful and only adds noise on a link that's already
+  going down.
+
+  > **Note.** Neither the open-code modes/OTP work nor the reboot button have
+  > been exercised against a real box yet — merged for review, pending a
+  > field test before they're called done.
 
 ### Fixed
 - **The long `225 UNAUTHORIZED` wall was a wrong frame format, not an auth

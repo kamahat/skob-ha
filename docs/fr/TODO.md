@@ -304,11 +304,13 @@ au-delà de ce qu'un utilisateur remarque et retire lui-même.
 (`sensor.boks_<id>_codes_otp_restants` / *Codes OTP restants*) — sans lui,
 le pool s'épuise en silence jusqu'au premier échec surprise.
 
-**État.** Conception ébauchée (cette entrée), pas implémentée. Bloqué sur :
-(a) la validation par quelqu'un de l'arbitrage retrait-à-l'envoi vs
-retrait-à-la-confirmation ci-dessus, (b) la revue normale une fois le code
-écrit — comme tout changement de config-flow, alimente au passage les cas
-de test déjà prévus au sujet 4 (« cas limites des config/options flow »).
+**État.** IMPLÉMENTÉ (fusionné, non publié — vise la v1.2.0 aux côtés du
+sujet 1). Les modes, la migration v1→v2 et le pool OTP (avec son capteur
+de diagnostic *Codes OTP restants*) sont tous sur `main`, avec en plus un
+**bouton de redémarrage** sans rapport (opcode 6, anti-rebond 60 s) fusionné
+dans la même fenêtre — voir CHANGELOG.md. **Reste à faire :** rien de tout
+cela — modes, OTP, ou redémarrage — n'a été testé sur un boîtier réel ; un
+test de terrain est le dernier verrou avant de publier une release.
 
 *Si vous comptez travailler sur l'un de ces sujets, ouvrir une issue au
 préalable évite les efforts en double — surtout pour les sujets 1 et 2, dont les
