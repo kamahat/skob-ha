@@ -57,6 +57,7 @@ from .const import (
     SOFTWARE_UUID,
     WRITE_UUID,
 )
+from .otp_store import OtpPool
 from .protocol import (
     ASK_DOOR_STATUS_FRAME,
     GET_LOGS_COUNT_FRAME,
@@ -129,6 +130,7 @@ class BoksLink:
         keepalive: float = KEEPALIVE_INTERVAL,
         reconnect_max: float = RECONNECT_DELAY_MAX,
         open_code: str | None = None,
+        otp_pool: OtpPool | None = None,
         label: str | None = None,
         refresh_interval: int = 0,
         config_key: str | None = None,
@@ -141,9 +143,13 @@ class BoksLink:
         self.keepalive = keepalive
         #: Plafond du backoff de reconnexion.
         self.reconnect_max = reconnect_max
-        #: Code d'ouverture. Absent = pas de bouton d'ouverture, l'intégration
-        #: reste strictement en lecture.
+        #: Code d'ouverture permanent (modes direct/secret). Absent = pas de
+        #: bouton d'ouverture, sauf si `_otp_pool` est fourni à la place.
         self.open_code = open_code
+        #: Pool de codes à usage unique (mode otp) — mutuellement exclusif
+        #: avec `open_code` : si fourni, chaque ouverture consomme un code du
+        #: pool au lieu de réutiliser `open_code`. Voir async_open_door.
+        self._otp_pool = otp_pool
         #: Identifiant lisible saisi par l'utilisateur (ex. « F540 »). Sert à
         #: nommer l'appareil : sans lui, deux boîtes s'appelleraient « Boks ».
         self.label = label
@@ -198,6 +204,11 @@ class BoksLink:
     def rechargeable(self) -> bool:
         """Vrai si le pack en place est à tension régulée."""
         return self._rechargeable
+
+    @property
+    def otp_remaining(self) -> int | None:
+        """Codes OTP restants, ou ``None`` si le mode OTP n'est pas actif."""
+        return self._otp_pool.remaining if self._otp_pool is not None else None
 
     @callback
     def async_set_rechargeable(self, rechargeable: bool) -> None:
@@ -398,13 +409,33 @@ class BoksLink:
         déjà tenu serait inutilisable en pratique, puisque le défaut — et le
         réglage économe — est justement de ne pas le tenir.
 
+        Deux sources de code, mutuellement exclusives :
+
+        - **Code permanent** (``self.open_code``) : réutilisé à chaque appel,
+          jamais consommé.
+        - **Pool OTP** (``self._otp_pool``) : un code est *lu* (pas retiré) en
+          tête de pool, tenté, puis retiré **seulement s'il a été confirmé
+          utilisé** (``VALID_OPEN_CODE``) — jamais à l'envoi. Un code refusé
+          reste dans le pool tel quel ; l'intégration n'essaie pas de deviner
+          pourquoi il a été refusé (cf. TODO.md #5 pour l'arbitrage complet et
+          le risque résiduel assumé en cas de lien coupé après acceptation
+          réelle mais réponse perdue).
+
         Lève ``BoksOpenError`` si le code est refusé ou si la boîte ne répond
         pas : la réponse ``VALID_OPEN_CODE`` est la seule preuve d'ouverture,
         l'écriture GATT ne prouve rien à elle seule.
         """
-        if not self.open_code:
-            raise BoksOpenError("aucun code d'ouverture n'est configuré")
-        frame = build_open_door_frame(self.open_code)
+        if self._otp_pool is not None:
+            code = self._otp_pool.peek()
+            if code is None:
+                raise BoksOpenError(
+                    "plus de code OTP disponible — ajoutez-en via Configurer"
+                )
+        else:
+            code = self.open_code
+            if not code:
+                raise BoksOpenError("aucun code d'ouverture n'est configuré")
+        frame = build_open_door_frame(code)
 
         async with self._open_lock:
             loop = asyncio.get_running_loop()
@@ -427,6 +458,9 @@ class BoksLink:
 
         if not accepted:
             raise BoksOpenError("code d'ouverture refusé par la boîte")
+        if self._otp_pool is not None:
+            await self._otp_pool.async_commit_use(code)
+            self._notify_listeners()  # le capteur « codes OTP restants » change
         _LOGGER.info("ouverture acceptée par %s", self.address)
 
     async def _async_open_via_temp_session(self, frame: bytes) -> None:

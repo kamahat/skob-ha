@@ -19,15 +19,22 @@ from .const import (
     CONF_LABEL,
     CONF_CONFIG_KEY,
     CONF_OPEN_CODE,
+    CONF_OPEN_CODE_MODE,
+    CONF_OPEN_CODE_VALUE,
     CONF_RECONNECT_MAX,
     CONF_REFRESH_INTERVAL,
     DOMAIN,
     KEEPALIVE_INTERVAL,
+    OPEN_CODE_MODE_DIRECT,
+    OPEN_CODE_MODE_NONE,
+    OPEN_CODE_MODE_OTP,
+    OPEN_CODE_MODE_SECRET,
     RECONNECT_DELAY_MAX,
     REFRESH_INTERVAL_DEFAULT,
 )
 from .coordinator import BoksLink
-from .secret import SecretError, async_resolve
+from .otp_store import OtpPool
+from .secret import SecretError, async_resolve, async_resolve_mode, is_secret_ref, secret_key
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -40,24 +47,69 @@ PLATFORMS: list[Platform] = [
 ]
 
 
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migre une entrée v1 (``open_code`` unique) vers v2 (``mode``/``value``).
+
+    v1 encodait trois états dans une seule chaîne, reniflée par préfixe :
+    vide, code brut, ou ``!secret <clé>``. v2 les rend explicites. Chaque
+    chaîne v1 retombe sans ambiguïté sur exactement l'un des trois modes
+    statiques (jamais ``otp``, qui n'existait pas en v1) — cette migration ne
+    peut donc pas échouer : aucune branche d'erreur, aucun risque de
+    désactiver silencieusement le bouton Ouvrir d'une installation existante.
+
+    Ne touche jamais aux autres options (keepalive, label, etc.).
+    """
+    if entry.version == 1:
+        old = (entry.options.get(CONF_OPEN_CODE) or "").strip()
+        options = {k: v for k, v in entry.options.items() if k != CONF_OPEN_CODE}
+        if not old:
+            options[CONF_OPEN_CODE_MODE] = OPEN_CODE_MODE_NONE
+            options[CONF_OPEN_CODE_VALUE] = ""
+        elif is_secret_ref(old):
+            options[CONF_OPEN_CODE_MODE] = OPEN_CODE_MODE_SECRET
+            options[CONF_OPEN_CODE_VALUE] = secret_key(old)
+        else:
+            options[CONF_OPEN_CODE_MODE] = OPEN_CODE_MODE_DIRECT
+            options[CONF_OPEN_CODE_VALUE] = old
+        hass.config_entries.async_update_entry(entry, options=options, version=2)
+        _LOGGER.debug(
+            "entrée %s migrée v1→v2 (mode=%s)",
+            entry.entry_id,
+            options[CONF_OPEN_CODE_MODE],
+        )
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Met en place une Boks."""
     address: str = entry.data[CONF_ADDRESS]
 
-    # Le code peut être une référence vers secrets.yaml. Une référence cassée
-    # ne doit pas empêcher l'intégration de démarrer : les capteurs de lecture
-    # n'ont rien à voir avec l'ouverture. On journalise clairement et on
-    # continue sans bouton — mieux vaut une capacité absente qu'une intégration
-    # entière indisponible.
-    try:
-        open_code = await async_resolve(hass, entry.options.get(CONF_OPEN_CODE))
-    except SecretError as err:
-        _LOGGER.error(
-            "code d'ouverture introuvable (%s) — le bouton d'ouverture ne sera "
-            "pas créé ; le reste de l'intégration fonctionne normalement",
-            err,
-        )
-        open_code = None
+    mode = entry.options.get(CONF_OPEN_CODE_MODE, OPEN_CODE_MODE_NONE)
+    value = entry.options.get(CONF_OPEN_CODE_VALUE, "")
+
+    open_code: str | None = None
+    otp_pool: OtpPool | None = None
+
+    if mode == OPEN_CODE_MODE_OTP:
+        # Pas de résolution à une valeur unique ici : un code OTP se consomme
+        # à l'usage, pas au démarrage. Voir BoksLink.async_open_door.
+        otp_pool = OtpPool(hass, entry.entry_id)
+        await otp_pool.async_load()
+    else:
+        # Le code peut référencer secrets.yaml. Une référence cassée ne doit
+        # pas empêcher l'intégration de démarrer : les capteurs de lecture
+        # n'ont rien à voir avec l'ouverture. On journalise clairement et on
+        # continue sans bouton — mieux vaut une capacité absente qu'une
+        # intégration entière indisponible.
+        try:
+            open_code = await async_resolve_mode(hass, mode, value)
+        except SecretError as err:
+            _LOGGER.error(
+                "code d'ouverture introuvable (%s) — le bouton d'ouverture ne sera "
+                "pas créé ; le reste de l'intégration fonctionne normalement",
+                err,
+            )
+            open_code = None
 
     # Config Key : même traitement tolérant que le code d'ouverture. Absente ou
     # cassée = pas de capacité d'admin NFC/VIGIK, le reste fonctionne.
@@ -77,6 +129,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         keepalive=float(entry.options.get(CONF_KEEPALIVE, KEEPALIVE_INTERVAL)),
         reconnect_max=float(entry.options.get(CONF_RECONNECT_MAX, RECONNECT_DELAY_MAX)),
         open_code=open_code,
+        otp_pool=otp_pool,
         label=(entry.options.get(CONF_LABEL) or "").strip() or None,
         refresh_interval=int(
             entry.options.get(CONF_REFRESH_INTERVAL, REFRESH_INTERVAL_DEFAULT)
