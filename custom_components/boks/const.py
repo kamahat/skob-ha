@@ -22,6 +22,10 @@ SOFTWARE_UUID: Final = "00002a28-0000-1000-8000-00805f9b34fb"
 # [opcode][longueur payload][payload][checksum], checksum = somme & 0xFF.
 OPCODE_ASK_DOOR_STATUS: Final = 2
 OPCODE_TEST_BATTERY: Final = 8
+#: Redémarre la carte de la Boks. Sans payload — trame [6, 0, 6]. Aucune
+#: réponse applicative attendue (contrairement à OPEN_DOOR) : la boîte coupe
+#: simplement le lien en redémarrant.
+OPCODE_REBOOT: Final = 6
 OPCODE_NOTIFY_DOOR_STATUS: Final = 132
 OPCODE_ANSWER_DOOR_STATUS: Final = 133
 
@@ -132,6 +136,7 @@ ALLOWED_TX_OPCODES: Final = frozenset(
         OPCODE_OPEN_DOOR,
         OPCODE_GET_LOGS_COUNT,
         OPCODE_REQUEST_LOGS,
+        OPCODE_REBOOT,
     }
 )
 
@@ -142,6 +147,12 @@ ALLOWED_TX_OPCODES: Final = frozenset(
 KEEPALIVE_INTERVAL: Final = 20.0
 RECONNECT_DELAY_MIN: Final = 5.0
 RECONNECT_DELAY_MAX: Final = 120.0
+
+#: Anti-rebond du bouton reboot. Le redémarrage matériel de la carte prend au
+#: moins ~40 s ; un second appui avant ce délai n'aurait pratiquement aucune
+#: chance d'aboutir (boîte déjà en train de couper/recharger son firmware) et
+#: ne ferait qu'ajouter du bruit sur un lien de toute façon en train de tomber.
+REBOOT_DEBOUNCE: Final = 60.0
 
 CONF_ADDRESS: Final = "address"
 

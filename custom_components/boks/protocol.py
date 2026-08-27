@@ -19,6 +19,7 @@ from .const import (
     OPCODE_LOG_CODE_KEY_VALID,
     OPCODE_LOG_NFC_OPENING,
     OPCODE_OPEN_DOOR,
+    OPCODE_REBOOT,
     OPCODE_REGISTER_NFC_TAG,
     OPCODE_REGISTER_NFC_TAG_SCAN_START,
     OPCODE_REQUEST_LOGS,
@@ -43,6 +44,10 @@ def build_frame(opcode: int, payload: bytes = b"") -> bytes:
 
 #: Requête d'état de la porte — sert aussi de keepalive (cf. const.KEEPALIVE_INTERVAL).
 ASK_DOOR_STATUS_FRAME: bytes = build_frame(OPCODE_ASK_DOOR_STATUS)
+
+#: Redémarre la carte. Sans payload, sans réponse applicative attendue —
+#: la boîte coupe simplement le lien en redémarrant (cf. const.OPCODE_REBOOT).
+REBOOT_FRAME: bytes = build_frame(OPCODE_REBOOT)
 
 #: Lecture de l'historique (lecture seule, sans authentification).
 GET_LOGS_COUNT_FRAME: bytes = build_frame(OPCODE_GET_LOGS_COUNT)

@@ -53,12 +53,14 @@ from .const import (
     OPEN_TIMEOUT,
     RECONNECT_DELAY_MAX,
     RECONNECT_DELAY_MIN,
+    REBOOT_DEBOUNCE,
     SOFTWARE_UUID,
     WRITE_UUID,
 )
 from .protocol import (
     ASK_DOOR_STATUS_FRAME,
     GET_LOGS_COUNT_FRAME,
+    REBOOT_FRAME,
     REQUEST_LOGS_FRAME,
     build_open_door_frame,
     build_register_nfc_frame,
@@ -80,6 +82,10 @@ class BoksOpenError(HomeAssistantError):
 
 class BoksAdminError(HomeAssistantError):
     """Une opération d'administration (NFC/VIGIK) a échoué — voir le message."""
+
+
+class BoksRebootError(HomeAssistantError):
+    """Le redémarrage n'a pas pu être envoyé — voir le message."""
 
 
 @dataclass
@@ -153,6 +159,9 @@ class BoksLink:
         self._open_lock = asyncio.Lock()
         #: Sérialise les opérations d'admin (une seule à la fois).
         self._admin_lock = asyncio.Lock()
+        #: Horodatage (loop.time()) du dernier reboot envoyé — anti-rebond,
+        #: voir async_reboot / const.REBOOT_DEBOUNCE.
+        self._last_reboot: float | None = None
         #: UID saisi dans l'entité texte, consommé par le bouton « Révoquer ».
         self.pending_unregister_uid: str = ""
         self.state = BoksState()
@@ -530,6 +539,43 @@ class BoksLink:
         if n == 0 or len(uid) != n:
             raise BoksAdminError("UID de badge incomplet dans la réponse")
         return bytes(uid)
+
+    async def async_reboot(self) -> None:
+        """Redémarre la carte de la Boks (opcode 6, sans payload).
+
+        Contrairement à ``OPEN_DOOR``, aucune réponse applicative n'est
+        attendue : la boîte coupe simplement le lien en redémarrant. Le
+        succès de l'écriture GATT (``response=True``, donc acquittée au
+        niveau ATT) est la seule confirmation disponible.
+
+        Réutilise ``_async_admin_session`` : fonctionne que le lien soit
+        maintenu ou non, comme l'ouverture et les opérations NFC — une
+        session temporaire est établie si nécessaire puis relâchée.
+
+        Anti-rebond de ``REBOOT_DEBOUNCE`` (60 s) : le redémarrage matériel
+        prend au moins ~40 s, un second appui avant ce délai n'aurait
+        pratiquement aucune chance d'aboutir et ne ferait qu'ajouter du bruit
+        sur un lien déjà en train de tomber. Lève ``BoksRebootError`` plutôt
+        que d'envoyer une seconde trame inutile.
+        """
+        now = asyncio.get_running_loop().time()
+        if self._last_reboot is not None:
+            elapsed = now - self._last_reboot
+            if elapsed < REBOOT_DEBOUNCE:
+                raise BoksRebootError(
+                    "redémarrage déjà demandé récemment — réessayez dans "
+                    f"{REBOOT_DEBOUNCE - elapsed:.0f} s"
+                )
+        self._last_reboot = now
+
+        async def body(client: BleakClientWithServiceCache) -> None:
+            await client.write_gatt_char(WRITE_UUID, REBOOT_FRAME, response=True)
+
+        try:
+            await self._async_admin_session(body)
+        except (BleakError, EOFError) as err:
+            raise BoksRebootError(f"échec de la liaison: {err}") from err
+        _LOGGER.info("redémarrage envoyé à %s", self.address)
 
     async def async_register_nfc_tag(self) -> dict[str, str]:
         """Enrôle un badge : ``SCAN_START`` → présentation → ``REGISTER``.
