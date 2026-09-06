@@ -4,7 +4,24 @@ All notable changes to this integration are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/), and the project
 follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased] — 1.2.0
+## [1.2.0] — 2026-09-06
+
+### Changed
+- **Recommended Bluetooth proxy is now [`kamahat/NimbleBLE-Esphome`](https://github.com/kamahat/NimbleBLE-Esphome)
+  `v0.1.0`**, replacing the vendored `fl4p/nimble-ble-proxy-esphome` firmware
+  (`firmware/nimble-ble-proxy/`, removed). It's a clean-room ESPHome
+  `external_component` — built and flashed with ESPHome's own tooling
+  (dashboard/CLI), no standalone ESP-IDF project to maintain, no manual
+  nanopb vendoring. See the new [`firmware/README.md`](firmware/README.md).
+  No change to this integration's own Python code: it only ever reaches the
+  mailbox through Home Assistant's Bluetooth stack, which works the same
+  regardless of which ESPHome device is proxying.
+
+  > **Note.** The old firmware auto-negotiated a looser BLE connection
+  > interval on link establishment (~10–30× less radio duty cycle while a
+  > link is held); the new library doesn't do this automatically yet — see
+  > *Why NimBLE* → *The Bluetooth LED* in the README. Moot with **Hold
+  > connection** off (the default); matters only if you turn it on.
 
 ### Added
 - **NFC administration**, opt-in behind a new **Config Key** option (accepts a
