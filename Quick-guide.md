@@ -19,8 +19,7 @@ mailbox.
 
 Pick the hardware that suits you: see the [hardware guide](docs/hardware.md).
 
-Build the bundled firmware — see
-[firmware/nimble-ble-proxy/README.md](firmware/nimble-ble-proxy/README.md) —
+Flash the ESPHome config — see [firmware/README.md](firmware/README.md) —
 then let Home Assistant's **ESPHome** integration pick it up over mDNS.
 
 ## 3. Install the integration

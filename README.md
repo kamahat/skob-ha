@@ -71,9 +71,10 @@ See [Opening the door](#opening-the-door) and [NFC administration](#nfc-administ
 
 1. **A Bluetooth proxy or adapter in range of the mailbox**, declared in Home
    Assistant. A proxy running the **NimBLE** stack is strongly recommended —
-   see [Why NimBLE](#why-nimble). This repository ships a
-   [ready-to-build firmware](firmware/nimble-ble-proxy/) and its
-   [build guide](firmware/nimble-ble-proxy/README.md).
+   see [Why NimBLE](#why-nimble). This repository points you to a
+   [ready-to-use ESPHome config](firmware/README.md) built on
+   [`kamahat/NimbleBLE-Esphome`](https://github.com/kamahat/NimbleBLE-Esphome) —
+   no standalone firmware to build by hand, it's a normal ESPHome device.
 2. **The official vendor dongle must be unplugged.** It holds a permanent BLE
    connection to the mailbox, which makes the mailbox invisible to every other
    client, including this integration.
@@ -82,12 +83,14 @@ See [Opening the door](#opening-the-door) and [NFC administration](#nfc-administ
 
 ### 1. Firmware (once)
 
-Build and flash the Bluetooth proxy — see **[firmware/nimble-ble-proxy/README.md](firmware/nimble-ble-proxy/README.md)**
-and the **[hardware specification](docs/hardware.md)**.
+Build and flash the Bluetooth proxy — see **[firmware/README.md](firmware/README.md)**
+and the **[hardware specification](docs/hardware.md)**. It's a standard
+ESPHome device (using [`kamahat/NimbleBLE-Esphome`](https://github.com/kamahat/NimbleBLE-Esphome)
+for the NimBLE stack), built and flashed with ESPHome's own tools.
 
 Then add the proxy to Home Assistant: it announces itself over mDNS and is
-picked up by the **ESPHome** integration (plaintext API, no encryption key).
-This is what allows Home Assistant to route Bluetooth to the mailbox.
+picked up by the **ESPHome** integration. This is what allows Home Assistant
+to route Bluetooth to the mailbox.
 
 ### 2. Integration (via HACS)
 
@@ -126,13 +129,28 @@ GATT link to it — including this integration's, but **not**, on ours, while
 the vendor's own bridge dongle holds one. That difference sent us looking for
 a cause:
 
-- **Tested and confirmed:** without any explicit request, the proxy firmware
-  held its link at NimBLE's default connection interval — **30–50 ms, zero
-  slave latency** — meaning the mailbox's radio had to wake and answer 20 to
-  33 times *per second* for as long as the link stayed up. From
-  [v0.2.0](firmware/nimble-ble-proxy/NOTICE.md) the proxy negotiates a much
-  looser **200–400 ms interval with slave latency**, a measured **~10–30×**
-  cut in that radio duty cycle — worth having regardless.
+- **Tested and confirmed:** without any explicit request, the firmware held
+  its link at NimBLE's default connection interval — **30–50 ms, zero slave
+  latency** — meaning the mailbox's radio had to wake and answer 20 to 33
+  times *per second* for as long as the link stayed up. The old firmware
+  (fl4p, replaced since by
+  [`kamahat/NimbleBLE-Esphome`](https://github.com/kamahat/NimbleBLE-Esphome),
+  see [firmware.md](firmware/README.md)) negotiated a much looser
+  **200–400 ms interval with slave latency** from its v0.2.0, a measured
+  **~10–30×** cut in that radio duty cycle.
+
+  > ⚠️ **This automatic negotiation is not (yet) carried over by
+  > `NimbleBLE-Esphome`**: nothing there spontaneously renegotiates the
+  > connection interval on link establishment (the component does expose a
+  > standard ESPHome handler for it —
+  > `bluetooth_proxy.bluetooth_set_connection_params` — but only if the
+  > *client* asks; the old firmware did it unprompted). In practice: with
+  > **Hold connection** off (the default, recommended — see just below) this
+  > changes nothing, since the mailbox never holds a link continuously. It
+  > only matters if you turn **Hold connection** on: expect a radio duty
+  > cycle (and battery draw) closer to the "without any explicit request"
+  > figure above than to the old firmware's, until this is fixed at the
+  > library level.
 - **Tested and disproven:** that change alone does **not** turn the LED off.
   Holding the link at the new, far gentler interval still keeps it lit
   continuously, just as before. The LED tracks *link presence*, not radio
@@ -349,8 +367,10 @@ client keeps exchanging with it. Two consequences:
   ESPHome Bluetooth proxies — GATT service discovery never completes within
   that window on this device, so the connection is dropped before anything can
   be read. With **NimBLE**, discovery completes in about 6 seconds. A native
-  Linux BlueZ host also works. This is why the firmware in this repository uses
-  NimBLE.
+  Linux BlueZ host also works. This is why the proxy config this repository
+  points you to uses [`kamahat/NimbleBLE-Esphome`](https://github.com/kamahat/NimbleBLE-Esphome),
+  a clean-room ESPHome `external_component` built specifically to swap in
+  NimBLE for exactly this reason.
 - **A keepalive is mandatory.** The integration sends a periodic status request
   to keep the link alive; without it the mailbox disconnects. This is normal and
   expected behaviour, not a workaround for a bug.
@@ -401,7 +421,7 @@ does not interact with the vendor's servers.
 ## Credits & licenses
 
 - Home Assistant integration and documentation: **GPL-3.0** (see `LICENSE`).
-- Bundled firmware: third-party work by **fl4p**, declared MIT — see
-  [`firmware/nimble-ble-proxy/NOTICE.md`](firmware/nimble-ble-proxy/NOTICE.md)
-  for attribution, the pinned upstream commit, and the single portability
-  change applied.
+- The Bluetooth proxy is no longer bundled in this repository: it's a plain
+  ESPHome config that references
+  [`kamahat/NimbleBLE-Esphome`](https://github.com/kamahat/NimbleBLE-Esphome)
+  (MIT) as an external dependency — see [firmware/README.md](firmware/README.md).

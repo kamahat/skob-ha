@@ -18,8 +18,8 @@ sur cette boîte.
 
 Choisissez le matériel qui vous convient : le [guide matériel](hardware.md).
 
-Compilez le firmware fourni — voir [firmware/nimble-ble-proxy/README-FR.md](../../firmware/nimble-ble-proxy/README-FR.md)
-puis laissez l'intégration **ESPHome** de Home Assistant le détecter en mDNS.
+Flashez la config ESPHome — voir [firmware.md](firmware.md) — puis laissez
+l'intégration **ESPHome** de Home Assistant le détecter en mDNS.
 
 ## 3. Installez l'intégration
 

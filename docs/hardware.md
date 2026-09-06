@@ -21,9 +21,10 @@ considering — see [Alternative boards](#alternative-boards-esp32-c6--c5).
 ## Alternative boards (ESP32-C6 / C5)
 
 The **ESP32-S3** is the reference and is validated end-to-end against this
-mailbox. Two newer RISC-V chips are attractive alternatives — both need the
-firmware retargeted and rebuilt (`idf.py set-target esp32c6` / `esp32c5`), and
-neither has yet been validated against the mailbox here.
+mailbox. Two newer RISC-V chips are attractive alternatives — both just need
+`board:` set accordingly in the ESPHome config (e.g. `esp32-c6-devkitc-1` /
+`esp32-c5-devkitc-1`), and neither has yet been validated against the mailbox
+here.
 
 | Chip | Suggested boards | Radio | Cores | Maturity for this use | Watch out |
 |---|---|---|---|---|---|

@@ -23,9 +23,9 @@ RISC-V plus récentes méritent aussi l'examen — voir
 
 L'**ESP32-S3** est la référence, validée de bout en bout contre cette boîte.
 Deux puces RISC-V plus récentes sont des alternatives intéressantes — toutes
-deux imposent de recibler et recompiler le firmware
-(`idf.py set-target esp32c6` / `esp32c5`), et aucune n'a encore été validée
-contre la boîte ici.
+deux nécessitent juste le bon `board:` dans la config ESPHome
+(`esp32-c6-devkitc-1` / `esp32-c5-devkitc-1`), et aucune n'a encore été
+validée contre la boîte ici.
 
 | Puce | Cartes suggérées | Radio | Cœurs | Maturité pour cet usage | Attention |
 |---|---|---|---|---|---|

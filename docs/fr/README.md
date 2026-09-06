@@ -73,9 +73,11 @@ Voir [Ouvrir la porte](#ouvrir-la-porte) et [Administration NFC](#administration
 
 1. **Un proxy ou adaptateur Bluetooth à portée de la boîte**, déclaré dans Home
    Assistant. Un proxy sur pile **NimBLE** est fortement recommandé — voir
-   [Pourquoi NimBLE](#pourquoi-nimble). Ce dépôt fournit un
-   [firmware prêt à compiler](../../firmware/nimble-ble-proxy/) et son
-   [guide de compilation](../../firmware/nimble-ble-proxy/README-FR.md).
+   [Pourquoi NimBLE](#pourquoi-nimble). Ce dépôt vous oriente vers une
+   [config ESPHome prête à l'emploi](firmware.md) construite sur
+   [`kamahat/NimbleBLE-Esphome`](https://github.com/kamahat/NimbleBLE-Esphome) —
+   pas de firmware autonome à compiler à la main, c'est un appareil ESPHome
+   normal.
 2. **Le dongle officiel du fabricant doit être débranché.** Il maintient une
    connexion BLE permanente, ce qui rend la boîte invisible pour tout autre
    client, dont cette intégration.
@@ -84,12 +86,14 @@ Voir [Ouvrir la porte](#ouvrir-la-porte) et [Administration NFC](#administration
 
 ### 1. Firmware (une fois)
 
-Compilez et flashez le proxy Bluetooth — voir **[firmware/nimble-ble-proxy/README-FR.md](../../firmware/nimble-ble-proxy/README-FR.md)** et
-la **[spécification matérielle](hardware.md)**.
+Flashez le proxy Bluetooth — voir **[firmware.md](firmware.md)** et
+la **[spécification matérielle](hardware.md)**. C'est un appareil ESPHome
+standard (utilisant [`kamahat/NimbleBLE-Esphome`](https://github.com/kamahat/NimbleBLE-Esphome)
+pour la pile NimBLE), compilé et flashé avec les outils d'ESPHome lui-même.
 
 Ajoutez ensuite le proxy à Home Assistant : il s'annonce en mDNS et est détecté
-par l'intégration **ESPHome** (API en clair, sans clé de chiffrement). C'est ce
-qui permet à Home Assistant de router le Bluetooth vers la boîte.
+par l'intégration **ESPHome**. C'est ce qui permet à Home Assistant de router
+le Bluetooth vers la boîte.
 
 ### 2. Intégration (via HACS)
 
@@ -129,14 +133,28 @@ un lien GATT — y compris celui de cette intégration — mais **pas**, chez no
 quand c'est le pont officiel du fabricant qui tient le lien. Cet écart nous a
 lancés sur une piste :
 
-- **Testé et confirmé :** sans réglage explicite, le firmware du proxy tenait
-  son lien à l'intervalle par défaut de NimBLE — **30-50 ms, latence nulle** —
-  ce qui obligeait la radio de la boîte à se réveiller et répondre 20 à 33 fois
-  **par seconde**, tant que le lien restait ouvert. Depuis la
-  [v0.2.0](../../firmware/nimble-ble-proxy/NOTICE.md), le proxy négocie un
-  intervalle bien plus lâche — **200-400 ms avec latence** —, soit une
-  réduction mesurée d'un facteur **~10 à 30** de ce duty cycle radio. Un gain
-  qui vaut la peine, indépendamment de la suite.
+- **Testé et confirmé :** sans réglage explicite, le firmware tenait son lien
+  à l'intervalle par défaut de NimBLE — **30-50 ms, latence nulle** — ce qui
+  obligeait la radio de la boîte à se réveiller et répondre 20 à 33 fois
+  **par seconde**, tant que le lien restait ouvert. L'ancien firmware (fl4p,
+  remplacé depuis par [`kamahat/NimbleBLE-Esphome`](https://github.com/kamahat/NimbleBLE-Esphome),
+  voir [firmware.md](firmware.md)) négociait depuis sa v0.2.0 un intervalle
+  bien plus lâche — **200-400 ms avec latence** —, soit une réduction mesurée
+  d'un facteur **~10 à 30** de ce duty cycle radio.
+
+  > ⚠️ **Ce réglage automatique du proxy n'est pas encore repris par
+  > `NimbleBLE-Esphome`** : rien n'y renégocie spontanément l'intervalle de
+  > connexion à l'établissement du lien (le composant expose bien un handler
+  > standard ESPHome pour ça — `bluetooth_proxy.bluetooth_set_connection_params` —
+  > mais seulement si le *client* le demande explicitement ; l'ancien firmware
+  > le faisait de lui-même, sans qu'on le lui demande). Concrètement : avec
+  > **Connexion maintenue** sur **Éteint** (réglage par défaut, recommandé —
+  > voir juste en dessous), ceci ne change rien, la boîte n'a jamais de lien
+  > tenu en continu. Ça ne redevient pertinent que si vous passez **Connexion
+  > maintenue** sur **Allumé** : attendez-vous alors à un duty cycle radio (et
+  > donc une consommation de piles) plus proche de la mesure "sans réglage
+  > explicite" ci-dessus qu'avec l'ancien firmware, tant que ce n'est pas
+  > corrigé côté bibliothèque.
 - **Testé et infirmé :** ce changement seul **n'éteint pas** la diode. Tenir le
   lien au nouvel intervalle, bien plus doux, la laisse quand même allumée en
   continu, exactement comme avant. La diode suit la *présence* du lien, pas son
@@ -366,8 +384,11 @@ n'échange pas avec elle. Deux conséquences :
   Bluetooth ESPHome standard — la découverte des services GATT n'aboutit jamais
   dans cette fenêtre sur cet appareil : la connexion est coupée avant d'avoir pu
   lire quoi que ce soit. Avec **NimBLE**, la découverte prend environ 6 secondes.
-  Un hôte Linux BlueZ natif fonctionne également. D'où le choix de NimBLE pour
-  le firmware de ce dépôt.
+  Un hôte Linux BlueZ natif fonctionne également. D'où le choix de la config
+  proxy vers laquelle ce dépôt vous oriente, basée sur
+  [`kamahat/NimbleBLE-Esphome`](https://github.com/kamahat/NimbleBLE-Esphome),
+  un `external_component` ESPHome clean-room construit spécifiquement pour
+  remplacer Bluedroid par NimBLE pour cette raison.
 - **Un keepalive est indispensable.** L'intégration envoie périodiquement une
   requête de statut pour maintenir le lien ; sans elle, la boîte se déconnecte.
   C'est un comportement normal et attendu, pas un contournement de bug.
@@ -401,6 +422,7 @@ n'extrait aucun secret et n'interagit pas avec les serveurs du fabricant.
 ## Crédits et licences
 
 - Intégration Home Assistant et documentation : **GPL-3.0** (voir `LICENSE`).
-- Firmware embarqué : travail tiers de **fl4p**, déclaré MIT — voir
-  [`NOTICE.md`](../../firmware/nimble-ble-proxy/NOTICE.md) pour l'attribution,
-  le commit upstream figé et l'unique correctif de portabilité appliqué.
+- Le proxy Bluetooth n'est plus vendorisé dans ce dépôt : c'est une config
+  ESPHome ordinaire qui référence
+  [`kamahat/NimbleBLE-Esphome`](https://github.com/kamahat/NimbleBLE-Esphome)
+  (MIT) en dépendance externe — voir [firmware.md](firmware.md).
