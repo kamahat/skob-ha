@@ -4,7 +4,11 @@ All notable changes to this integration are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/), and the project
 follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.3.0] — 2026-09-24
+
+> **Field-test gap.** The *missing from the box's log* detection mode has
+> not yet been exercised against a real box; the *not commanded by Home
+> Assistant* mode, the flap and door events were.
 
 ### Added
 - **Optional Zigbee door and mail-flap sensors.** The options flow gains a last
