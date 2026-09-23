@@ -21,6 +21,13 @@ follows [Semantic Versioning](https://semver.org/).
   `mail_logic.py`, free of any Home Assistant dependency, with unit tests
   under `tests/`.
 
+### Fixed
+- **Options flow crashed with « Unknown error »** when the *Value* field of the
+  open-code screen was left empty in *permanent code* or *secrets.yaml* mode
+  (`normalize_pin(None)`). The field never redisplays the stored value, so an
+  empty submit now keeps the current one when the mode is unchanged, and is a
+  regular validation error otherwise.
+
 ## [1.2.0] — 2026-09-06
 
 ### Changed
