@@ -46,7 +46,7 @@
           "open_code_value": "Value"
         },
         "data_description": {
-          "open_code_value": "Depending on the mode chosen on the previous screen: the code itself (6 characters over the alphabet 0123456789AB) for “Permanent code”; the key name in secrets.yaml (without the !secret prefix) for “secrets.yaml reference”; a list of one-time codes, one per line, for “OTP codes” — each code is only removed from the pool once the mailbox has actually used it, never before. Whatever the mode, filling this in adds an Open button: anyone with access to Home Assistant will then be able to open the mailbox."
+          "open_code_value": "Depending on the mode chosen on the previous screen: the code itself (6 characters over the alphabet 0123456789AB) for “Permanent code”; the key name in secrets.yaml (without the !secret prefix) for “secrets.yaml reference”; a list of one-time codes, one per line, for “OTP codes” — each code is only removed from the pool once the mailbox has actually used it, never before. Whatever the mode, filling this in adds an Open button: anyone with access to Home Assistant will then be able to open the mailbox. Leaving it empty keeps the current value when the mode is unchanged (permanent code or secrets.yaml)."
         }
       },
       "sensors": {

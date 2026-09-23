@@ -313,7 +313,22 @@ class BoksOptionsFlow(OptionsFlow):
         if user_input is not None:
             raw = (user_input.get(CONF_OPEN_CODE_VALUE) or "").strip()
 
-            if mode == OPEN_CODE_MODE_SECRET:
+            # Champ vide : le formulaire ne réaffiche jamais la valeur (masquée,
+            # ou référence secrète). Si le mode est inchangé, on conserve donc
+            # la valeur déjà enregistrée plutôt que de planter sur une
+            # résolution vide ; sinon c'est une saisie manquante.
+            options = self.config_entry.options
+            if (
+                not raw
+                and mode in (OPEN_CODE_MODE_DIRECT, OPEN_CODE_MODE_SECRET)
+                and options.get(CONF_OPEN_CODE_MODE) == mode
+            ):
+                raw = (options.get(CONF_OPEN_CODE_VALUE) or "").strip()
+
+            if not raw and mode != OPEN_CODE_MODE_OTP:
+                errors[CONF_OPEN_CODE_VALUE] = "invalid_open_code"
+
+            elif mode == OPEN_CODE_MODE_SECRET:
                 # Vérifié dès maintenant que la clé existe et contient un code
                 # valide, sinon l'erreur ne se révélerait qu'au premier appui
                 # sur le bouton. La valeur n'est jamais réaffichée — seule la

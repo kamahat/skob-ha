@@ -46,7 +46,7 @@
           "open_code_value": "Valeur"
         },
         "data_description": {
-          "open_code_value": "Selon le mode choisi a l'ecran precedent : le code lui-meme (6 caracteres sur l'alphabet 0123456789AB) pour « Code permanent » ; le nom de la cle dans secrets.yaml (sans le prefixe !secret) pour « Reference secrets.yaml » ; une liste de codes a usage unique, un par ligne, pour « Codes OTP » — chaque code n'est retire du pool qu'apres avoir ete effectivement utilise par la boite, jamais avant. Quel que soit le mode, renseigner ce champ fait apparaitre un bouton Ouvrir : quiconque a acces a Home Assistant pourra alors ouvrir la boite."
+          "open_code_value": "Selon le mode choisi a l'ecran precedent : le code lui-meme (6 caracteres sur l'alphabet 0123456789AB) pour « Code permanent » ; le nom de la cle dans secrets.yaml (sans le prefixe !secret) pour « Reference secrets.yaml » ; une liste de codes a usage unique, un par ligne, pour « Codes OTP » — chaque code n'est retire du pool qu'apres avoir ete effectivement utilise par la boite, jamais avant. Quel que soit le mode, renseigner ce champ fait apparaitre un bouton Ouvrir : quiconque a acces a Home Assistant pourra alors ouvrir la boite. Laisser vide conserve la valeur actuelle si le mode n'a pas change (code permanent ou secrets.yaml)."
         }
       },
       "sensors": {
