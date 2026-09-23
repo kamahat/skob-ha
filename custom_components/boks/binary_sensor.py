@@ -7,6 +7,8 @@ from homeassistant.components.binary_sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
+from collections.abc import Callable
+
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -20,9 +22,27 @@ async def async_setup_entry(
 ) -> None:
     """Ajoute les capteurs binaires."""
     link: BoksLink = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities(
-        [BoksDoorSensor(link), BoksLinkSensor(link), BoksBatteryLowSensor(link)]
-    )
+    entities: list[BinarySensorEntity] = [
+        BoksDoorSensor(link),
+        BoksLinkSensor(link),
+        BoksBatteryLowSensor(link),
+    ]
+    tracker = link.tracker
+    if tracker is not None and tracker.door_entity:
+        entities.append(
+            BoksMirrorSensor(
+                link, "door_live", "Porte (capteur Zigbee)",
+                BinarySensorDeviceClass.DOOR, lambda: tracker.door_state,
+            )
+        )
+    if tracker is not None and tracker.flap_entity:
+        entities.append(
+            BoksMirrorSensor(
+                link, "mail_flap", "Volet à courrier",
+                BinarySensorDeviceClass.OPENING, lambda: tracker.flap_state,
+            )
+        )
+    async_add_entities(entities)
 
 
 class BoksDoorSensor(BoksEntity, BinarySensorEntity, RestoreIntoState):
@@ -91,3 +111,33 @@ class BoksBatteryLowSensor(BoksEntity, BinarySensorEntity):
     @property
     def is_on(self) -> bool | None:
         return self._link.battery_low
+
+
+class BoksMirrorSensor(BoksEntity, BinarySensorEntity):
+    """Reflet d'un capteur Zigbee associé (porte ou volet), en temps réel.
+
+    Contrairement à « Porte » — poussé par le lien BLE, souvent coupé —, celui-ci
+    suit le capteur externe dès qu'il change. Indisponible si le capteur source
+    l'est : on n'invente pas un état.
+    """
+
+    def __init__(
+        self,
+        link: BoksLink,
+        key: str,
+        name: str,
+        device_class: BinarySensorDeviceClass,
+        getter: Callable[[], bool | None],
+    ) -> None:
+        super().__init__(link, key)
+        self._attr_name = name
+        self._attr_device_class = device_class
+        self._getter = getter
+
+    @property
+    def available(self) -> bool:
+        return self._getter() is not None
+
+    @property
+    def is_on(self) -> bool | None:
+        return self._getter()

@@ -178,6 +178,19 @@ REBOOT_DEBOUNCE: Final = 60.0
 
 CONF_ADDRESS: Final = "address"
 
+# --- Capteurs Zigbee optionnels (porte + volet à courrier) ------------------
+# Cf. mail_logic.py / sensors_link.py. Tout est facultatif : sans capteur
+# associé, le comportement est strictement celui d'avant.
+CONF_DOOR_SENSOR: Final = "door_sensor"
+CONF_MAIL_FLAP_SENSOR: Final = "mail_flap_sensor"
+CONF_DOOR_CHECK_MODE: Final = "door_check_mode"
+CONF_DOOR_CHECK_WINDOW: Final = "door_check_window"
+#: Fenêtre de corrélation (secondes) entre l'ouverture de la porte et une
+#: ouverture légitime (commande HA ou entrée du journal).
+DOOR_CHECK_WINDOW_DEFAULT: Final = 30
+DOOR_CHECK_WINDOW_MIN: Final = 5
+DOOR_CHECK_WINDOW_MAX: Final = 300
+
 # --- Batterie --------------------------------------------------------------
 # La Boks ne publie pas de tension : elle expose la caractéristique standard
 # 0x2A19, c'est-à-dire un pourcentage qu'elle a elle-même dérivé de la tension

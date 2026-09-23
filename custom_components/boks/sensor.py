@@ -29,6 +29,13 @@ async def async_setup_entry(
         entities.append(BoksLabelSensor(link))
     if link.otp_remaining is not None:
         entities.append(BoksOtpRemainingSensor(link))
+    tracker = link.tracker
+    if tracker is not None and tracker.flap_entity:
+        entities.append(BoksMailDepositSensor(link))
+    if tracker is not None and tracker.door_entity:
+        entities.append(BoksMailCollectSensor(link))
+        if tracker.logic.mode != "off":
+            entities.append(BoksUnauthorizedOpeningSensor(link))
     async_add_entities(
         entities
         + [
@@ -271,3 +278,42 @@ class BoksCodeOpenSensor(_BoksOpeningSensor):
     def __init__(self, link: BoksLink) -> None:
         super().__init__(link, "last_code_open")
         self._attr_name = "Dernière ouverture code"
+
+
+class _BoksMailSensor(_BoksOpeningSensor):
+    """Base des horodatages issus des capteurs Zigbee : exacts, pas approximatifs."""
+
+    _attr_entity_category = None
+
+
+class BoksMailDepositSensor(_BoksMailSensor):
+    """Dernier dépôt de courrier (volet ouvert puis refermé)."""
+
+    _attr_icon = "mdi:email-arrow-down"
+    _restore_attr = "last_mail_deposit"
+
+    def __init__(self, link: BoksLink) -> None:
+        super().__init__(link, "last_mail_deposit")
+        self._attr_name = "Dernier dépôt de courrier"
+
+
+class BoksMailCollectSensor(_BoksMailSensor):
+    """Dernière relève (ouverture de la porte de la boîte)."""
+
+    _attr_icon = "mdi:mailbox-open-up"
+    _restore_attr = "last_mail_collect"
+
+    def __init__(self, link: BoksLink) -> None:
+        super().__init__(link, "last_mail_collect")
+        self._attr_name = "Dernière relève du courrier"
+
+
+class BoksUnauthorizedOpeningSensor(_BoksMailSensor):
+    """Dernière ouverture de porte sans ouverture légitime correspondante."""
+
+    _attr_icon = "mdi:shield-alert"
+    _restore_attr = "last_unauthorized_opening"
+
+    def __init__(self, link: BoksLink) -> None:
+        super().__init__(link, "last_unauthorized_opening")
+        self._attr_name = "Dernière ouverture non attendue"

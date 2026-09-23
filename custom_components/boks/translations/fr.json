@@ -48,13 +48,31 @@
         "data_description": {
           "open_code_value": "Selon le mode choisi a l'ecran precedent : le code lui-meme (6 caracteres sur l'alphabet 0123456789AB) pour « Code permanent » ; le nom de la cle dans secrets.yaml (sans le prefixe !secret) pour « Reference secrets.yaml » ; une liste de codes a usage unique, un par ligne, pour « Codes OTP » — chaque code n'est retire du pool qu'apres avoir ete effectivement utilise par la boite, jamais avant. Quel que soit le mode, renseigner ce champ fait apparaitre un bouton Ouvrir : quiconque a acces a Home Assistant pourra alors ouvrir la boite."
         }
+      },
+      "sensors": {
+        "title": "Capteurs porte et volet (optionnel)",
+        "description": "Associez, si vous en avez, un capteur de contact Zigbee sur la porte de la boite et un autre sur le volet a courrier. Laissez vide pour ne rien changer : sans capteur, l'integration se comporte exactement comme avant.",
+        "data": {
+          "door_sensor": "Capteur de porte (optionnel)",
+          "mail_flap_sensor": "Capteur du volet a courrier (optionnel)",
+          "door_check_mode": "Detection d'ouverture non attendue",
+          "door_check_window": "Fenetre de correlation (secondes)"
+        },
+        "data_description": {
+          "door_sensor": "Un binary_sensor de contact (ouvert/ferme) pose sur la porte de la Boks. Donne l'ouverture en temps reel, la ou l'entite Bluetooth « Porte » est souvent perimee car le lien n'est pas tenu en permanence. Sert aussi a l'evenement « courrier releve ».",
+          "mail_flap_sensor": "Un binary_sensor de contact pose sur le volet a courrier. Volet ouvert puis referme = evenement « courrier depose ».",
+          "door_check_mode": "Comment decider qu'une ouverture de porte est « non attendue » (necessite un capteur de porte). NE RIEN FAIRE : aucune alerte. OUVERTURE NON COMMANDEE PAR HOME ASSISTANT : alerte si la porte s'ouvre sans que vous ayez utilise le bouton Ouvrir dans la fenetre. Ne lit pas le journal (aucun drain), mais un code ou un badge legitimes declenchent aussi l'alerte : elle ne distingue pas un voisin d'un intrus. OUVERTURE ABSENTE DU JOURNAL : alerte si la porte s'ouvre sans code ni badge correspondant dans le journal de la boite (ou sans bouton Ouvrir) — distingue un acces autorise d'une ouverture a la cle ou forcee. Exige une lecture periodique du journal (intervalle de rafraichissement > 0), qui DRAINE le journal (risque de voler des evenements au dongle BoksLINK officiel), et l'alerte n'arrive qu'a la lecture suivante.",
+          "door_check_window": "Ecart maximal entre l'ouverture de la porte et l'ouverture legitime qui l'explique. Le journal date ses evenements par un age relatif, donc approximativement : 30 s convient dans la plupart des cas."
+        }
       }
     },
     "error": {
       "invalid_open_code": "Code invalide : 6 caracteres, uniquement 0-9, A et B (un par ligne en mode OTP).",
       "invalid_config_key": "Config Key invalide : exactement 8 caracteres hexadecimaux (0-9, A-F).",
       "unknown_secret": "Cette cle est introuvable dans secrets.yaml (ou ne contient pas de texte).",
-      "no_codes_entered": "Entrez au moins un code, un par ligne."
+      "no_codes_entered": "Entrez au moins un code, un par ligne.",
+      "door_check_needs_sensor": "Ce mode exige un capteur de porte : renseignez-le ou choisissez « Ne rien faire ».",
+      "journal_needs_refresh": "Ce mode exige un intervalle de rafraichissement > 0 (premier ecran) : sans lecture periodique du journal, aucune alerte ne pourrait arriver."
     }
   },
   "selector": {
@@ -64,6 +82,13 @@
         "direct": "Code permanent",
         "secret": "Reference secrets.yaml",
         "otp": "Codes a usage unique (OTP)"
+      }
+    },
+    "door_check_mode": {
+      "options": {
+        "off": "Ne rien faire (aucune alerte)",
+        "ha_command": "Ouverture non commandee par Home Assistant (sans lire le journal)",
+        "journal": "Ouverture absente du journal de la boite (lit et draine le journal)"
       }
     }
   }

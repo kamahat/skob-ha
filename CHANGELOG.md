@@ -4,6 +4,23 @@ All notable changes to this integration are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/), and the project
 follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Optional Zigbee door and mail-flap sensors.** The options flow gains a last
+  screen to pair a `binary_sensor` on the Boks door and another on the mail
+  flap (both optional; without them nothing changes). New entities: live mirror
+  binary sensors, a *Mail activity* `event` entity (`mail_deposited`,
+  `mail_collected`, `unauthorized_opening`) and matching timestamp sensors. A
+  sensor going `unavailable`/`unknown` never produces an event.
+- **Unexpected-opening detection**, user-selectable: *do nothing* (default),
+  *not commanded by Home Assistant* (no log read, no drain, but valid codes and
+  badges also alert) or *missing from the box's log* (distinguishes authorised
+  access, but requires a refresh interval > 0 and drains the log). Correlation
+  window configurable (5–300 s, default 30 s). The state machine lives in
+  `mail_logic.py`, free of any Home Assistant dependency, with unit tests
+  under `tests/`.
+
 ## [1.2.0] — 2026-09-06
 
 ### Changed
