@@ -15,7 +15,11 @@ from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import (
     CONF_ADDRESS,
+    CONF_DOOR_CHECK_MODE,
+    CONF_DOOR_CHECK_WINDOW,
+    CONF_DOOR_SENSOR,
     CONF_KEEPALIVE,
+    CONF_MAIL_FLAP_SENSOR,
     CONF_LABEL,
     CONF_CONFIG_KEY,
     CONF_OPEN_CODE,
@@ -24,6 +28,7 @@ from .const import (
     CONF_RECONNECT_MAX,
     CONF_REFRESH_INTERVAL,
     DOMAIN,
+    DOOR_CHECK_WINDOW_DEFAULT,
     KEEPALIVE_INTERVAL,
     OPEN_CODE_MODE_DIRECT,
     OPEN_CODE_MODE_NONE,
@@ -33,7 +38,9 @@ from .const import (
     REFRESH_INTERVAL_DEFAULT,
 )
 from .coordinator import BoksLink
+from .mail_logic import MODE_OFF
 from .otp_store import OtpPool
+from .sensors_link import BoksSensorTracker
 from .secret import SecretError, async_resolve, async_resolve_mode, is_secret_ref, secret_key
 
 _LOGGER = logging.getLogger(__name__)
@@ -41,6 +48,7 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
     Platform.BUTTON,
+    Platform.EVENT,
     Platform.SENSOR,
     Platform.SWITCH,
     Platform.TEXT,
@@ -141,6 +149,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except Exception as err:  # noqa: BLE001
         raise ConfigEntryNotReady(f"démarrage du lien Boks impossible: {err}") from err
 
+    # Capteurs Zigbee optionnels : sans eux, aucun suivi n'est instancié.
+    door_sensor = entry.options.get(CONF_DOOR_SENSOR) or None
+    flap_sensor = entry.options.get(CONF_MAIL_FLAP_SENSOR) or None
+    if door_sensor or flap_sensor:
+        link.tracker = BoksSensorTracker(
+            hass,
+            link,
+            door_sensor,
+            flap_sensor,
+            # La corrélation n'a de sens qu'avec un capteur de porte.
+            entry.options.get(CONF_DOOR_CHECK_MODE, MODE_OFF) if door_sensor else MODE_OFF,
+            float(entry.options.get(CONF_DOOR_CHECK_WINDOW, DOOR_CHECK_WINDOW_DEFAULT)),
+        )
+        link.tracker.async_start()
+
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = link
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
@@ -152,6 +175,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unloaded:
         link: BoksLink = hass.data[DOMAIN].pop(entry.entry_id)
+        if link.tracker is not None:
+            link.tracker.async_stop()
         await link.async_stop()
         if not hass.data[DOMAIN]:
             hass.data.pop(DOMAIN)

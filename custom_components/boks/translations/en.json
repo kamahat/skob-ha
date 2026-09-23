@@ -48,13 +48,31 @@
         "data_description": {
           "open_code_value": "Depending on the mode chosen on the previous screen: the code itself (6 characters over the alphabet 0123456789AB) for “Permanent code”; the key name in secrets.yaml (without the !secret prefix) for “secrets.yaml reference”; a list of one-time codes, one per line, for “OTP codes” — each code is only removed from the pool once the mailbox has actually used it, never before. Whatever the mode, filling this in adds an Open button: anyone with access to Home Assistant will then be able to open the mailbox."
         }
+      },
+      "sensors": {
+        "title": "Door and mail-flap sensors (optional)",
+        "description": "Optionally pair a Zigbee contact sensor on the box's door and another on the mail flap. Leave empty to change nothing: without a sensor the integration behaves exactly as before.",
+        "data": {
+          "door_sensor": "Door sensor (optional)",
+          "mail_flap_sensor": "Mail-flap sensor (optional)",
+          "door_check_mode": "Unexpected-opening detection",
+          "door_check_window": "Correlation window (seconds)"
+        },
+        "data_description": {
+          "door_sensor": "A contact binary_sensor (open/closed) on the Boks door. Gives the opening in real time, where the Bluetooth « Door » entity is often stale because the link is not held permanently. Also drives the « mail collected » event.",
+          "mail_flap_sensor": "A contact binary_sensor on the mail flap. Flap opened then closed = « mail deposited » event.",
+          "door_check_mode": "How to decide that a door opening is « unexpected » (needs a door sensor). DO NOTHING: no alert. OPENING NOT COMMANDED BY HOME ASSISTANT: alert if the door opens without you having used the Open button within the window. Does not read the log (no drain), but a legitimate code or badge also triggers the alert: it cannot tell a neighbour from an intruder. OPENING MISSING FROM THE LOG: alert if the door opens with no matching code or badge entry in the box's log (or Open button) — tells an authorised access from a key or forced opening. Requires periodic log reads (refresh interval > 0), which DRAIN the log (risk of stealing events from the official BoksLINK dongle), and the alert only arrives at the next read.",
+          "door_check_window": "Maximum gap between the door opening and the legitimate opening that explains it. The log dates its events by a relative age, hence approximately: 30 s suits most cases."
+        }
       }
     },
     "error": {
       "invalid_open_code": "Invalid code: 6 characters, only 0-9, A and B (one per line in OTP mode).",
       "invalid_config_key": "Invalid Config Key: exactly 8 hexadecimal characters (0-9, A-F).",
       "unknown_secret": "That key was not found in secrets.yaml (or holds no text).",
-      "no_codes_entered": "Enter at least one code, one per line."
+      "no_codes_entered": "Enter at least one code, one per line.",
+      "door_check_needs_sensor": "This mode needs a door sensor: set one or choose « Do nothing ».",
+      "journal_needs_refresh": "This mode needs a refresh interval > 0 (first screen): without periodic log reads no alert could ever arrive."
     }
   },
   "selector": {
@@ -64,6 +82,13 @@
         "direct": "Permanent code",
         "secret": "secrets.yaml reference",
         "otp": "One-time codes (OTP)"
+      }
+    },
+    "door_check_mode": {
+      "options": {
+        "off": "Do nothing (no alert)",
+        "ha_command": "Opening not commanded by Home Assistant (no log read)",
+        "journal": "Opening missing from the box's log (reads and drains the log)"
       }
     }
   }

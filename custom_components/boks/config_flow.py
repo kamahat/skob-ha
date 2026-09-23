@@ -9,6 +9,7 @@ from typing import Any
 
 import voluptuous as vol
 
+from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 from homeassistant.components.bluetooth import (
     BluetoothServiceInfoBleak,
     async_discovered_service_info,
@@ -25,7 +26,11 @@ from homeassistant.helpers import selector
 from .const import (
     CONF_ADDRESS,
     CONF_CONFIG_KEY,
+    CONF_DOOR_CHECK_MODE,
+    CONF_DOOR_CHECK_WINDOW,
+    CONF_DOOR_SENSOR,
     CONF_KEEPALIVE,
+    CONF_MAIL_FLAP_SENSOR,
     DEFAULT_CONFIG_KEY_SECRET,
     CONF_LABEL,
     CONF_OPEN_CODE_MODE,
@@ -33,6 +38,9 @@ from .const import (
     CONF_RECONNECT_MAX,
     CONF_REFRESH_INTERVAL,
     DOMAIN,
+    DOOR_CHECK_WINDOW_DEFAULT,
+    DOOR_CHECK_WINDOW_MAX,
+    DOOR_CHECK_WINDOW_MIN,
     KEEPALIVE_INTERVAL,
     KEEPALIVE_MAX,
     KEEPALIVE_MIN,
@@ -48,6 +56,7 @@ from .const import (
     REFRESH_INTERVAL_MIN,
     SERVICE_UUID,
 )
+from .mail_logic import MODE_HA_COMMAND, MODE_JOURNAL, MODE_OFF
 from .otp_store import OtpPool
 from .protocol import normalize_config_key, normalize_pin
 from .secret import SecretError, async_resolve, async_resolve_mode, is_secret_ref
@@ -198,7 +207,7 @@ class BoksOptionsFlow(OptionsFlow):
                 self._pending = user_input
                 if user_input[CONF_OPEN_CODE_MODE] == OPEN_CODE_MODE_NONE:
                     self._pending[CONF_OPEN_CODE_VALUE] = ""
-                    return self.async_create_entry(data=self._pending)
+                    return await self.async_step_sensors()
                 return await self.async_step_open_code()
 
         options = self.config_entry.options
@@ -343,7 +352,7 @@ class BoksOptionsFlow(OptionsFlow):
 
             if not errors:
                 self._pending[CONF_OPEN_CODE_VALUE] = raw
-                return self.async_create_entry(data=self._pending)
+                return await self.async_step_sensors()
 
         is_secret_field = mode in (OPEN_CODE_MODE_DIRECT, OPEN_CODE_MODE_SECRET)
         return self.async_show_form(
@@ -363,5 +372,94 @@ class BoksOptionsFlow(OptionsFlow):
                 }
             ),
             description_placeholders={"mode": mode},
+            errors=errors,
+        )
+
+    async def async_step_sensors(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Dernier écran : capteurs Zigbee optionnels (porte, volet) et corrélation.
+
+        Tout est facultatif. Les capteurs sont enregistrés seulement s'ils sont
+        renseignés — l'écran s'affichant à chaque validation des options, vider
+        un champ les retire. ``suggested_value`` (et non ``default``) est
+        indispensable : avec un ``default``, Home Assistant ré-injecterait
+        l'ancienne valeur à chaque fois qu'on efface le champ.
+        """
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            door = user_input.get(CONF_DOOR_SENSOR) or None
+            flap = user_input.get(CONF_MAIL_FLAP_SENSOR) or None
+            mode = user_input.get(CONF_DOOR_CHECK_MODE, MODE_OFF)
+            if mode != MODE_OFF and not door:
+                errors[CONF_DOOR_CHECK_MODE] = "door_check_needs_sensor"
+            elif mode == MODE_JOURNAL and int(
+                self._pending.get(CONF_REFRESH_INTERVAL, 0)
+            ) <= 0:
+                # Sans lecture périodique du journal, aucune alerte n'arriverait.
+                errors[CONF_DOOR_CHECK_MODE] = "journal_needs_refresh"
+            if not errors:
+                if door:
+                    self._pending[CONF_DOOR_SENSOR] = door
+                if flap:
+                    self._pending[CONF_MAIL_FLAP_SENSOR] = flap
+                self._pending[CONF_DOOR_CHECK_MODE] = mode
+                self._pending[CONF_DOOR_CHECK_WINDOW] = user_input.get(
+                    CONF_DOOR_CHECK_WINDOW, DOOR_CHECK_WINDOW_DEFAULT
+                )
+                return self.async_create_entry(data=self._pending)
+
+        options = self.config_entry.options
+        entity_selector = selector.EntitySelector(
+            selector.EntitySelectorConfig(
+                domain="binary_sensor",
+                device_class=[
+                    BinarySensorDeviceClass.DOOR,
+                    BinarySensorDeviceClass.OPENING,
+                    BinarySensorDeviceClass.WINDOW,
+                    BinarySensorDeviceClass.GARAGE_DOOR,
+                ],
+            )
+        )
+        return self.async_show_form(
+            step_id="sensors",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_DOOR_SENSOR,
+                        description={"suggested_value": options.get(CONF_DOOR_SENSOR)},
+                    ): entity_selector,
+                    vol.Optional(
+                        CONF_MAIL_FLAP_SENSOR,
+                        description={
+                            "suggested_value": options.get(CONF_MAIL_FLAP_SENSOR)
+                        },
+                    ): entity_selector,
+                    vol.Required(
+                        CONF_DOOR_CHECK_MODE,
+                        default=options.get(CONF_DOOR_CHECK_MODE, MODE_OFF),
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[MODE_OFF, MODE_HA_COMMAND, MODE_JOURNAL],
+                            translation_key="door_check_mode",
+                            mode=selector.SelectSelectorMode.LIST,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_DOOR_CHECK_WINDOW,
+                        default=options.get(
+                            CONF_DOOR_CHECK_WINDOW, DOOR_CHECK_WINDOW_DEFAULT
+                        ),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=DOOR_CHECK_WINDOW_MIN,
+                            max=DOOR_CHECK_WINDOW_MAX,
+                            step=5,
+                            unit_of_measurement="s",
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
+                }
+            ),
             errors=errors,
         )

@@ -191,6 +191,38 @@ two keepalives and reconnects in a loop — which costs *more* than holding it.
 > it stays cached in the Home Assistant process. After updating the component
 > files, a full restart is still required.
 
+## Door and mail-flap sensors (optional)
+
+If you have two Zigbee contact sensors (or any `binary_sensor` of class
+`door` / `opening` / `window` / `garage_door`), you can pair them from
+**Configure → last screen**: one on the **Boks door**, one on the **mail
+flap**. Both are optional; leave them empty and nothing changes.
+
+**Why bother.** The Bluetooth *Door* entity is only as fresh as the last
+connection (the link is not held by default). A contact sensor gives the door in
+**real time**.
+
+| Entity | What it is |
+|---|---|
+| *Door (Zigbee sensor)* | Live mirror of the door sensor |
+| *Mail flap* | Live mirror of the flap sensor |
+| *Mail activity* (`event`) | `mail_deposited` (flap opened then closed), `mail_collected` (door opened), `unauthorized_opening` |
+| *Last mail deposit / collection / unexpected opening* | Timestamps of the above |
+
+A sensor going `unavailable`/`unknown` never produces an event: only a real
+closed → open transition counts.
+
+### Unexpected-opening detection
+
+Choose how a door opening is judged **unexpected** (needs a door sensor). The
+correlation window defaults to 30 s.
+
+| Mode | Legitimate means | Reads the log (drains it)? | Blind spot |
+|---|---|---|---|
+| **Do nothing** (default) | — | no | no alert |
+| **Not commanded by Home Assistant** | you pressed *Open* in HA within the window | **no** | a valid code or badge *also* alerts — it cannot tell a neighbour from an intruder |
+| **Missing from the box's log** | a code/badge entry in the box's log (or *Open*) within the window | **yes** — needs *Refresh interval* > 0 | alert only arrives at the **next log read**; drains the log the official BoksLINK dongle relies on (see [Opening history](#opening-history)) |
+
 ## Several mailboxes
 
 Each mailbox is a separate config entry, keyed by its BLE address, so adding

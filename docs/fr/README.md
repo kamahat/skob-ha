@@ -198,6 +198,38 @@ keepalives et se reconnecte en boucle — ce qui coûte *plus* que de le tenir.
 > reste en cache dans le processus Home Assistant. Après une mise à jour des
 > fichiers du composant, un redémarrage complet reste nécessaire.
 
+## Capteurs de porte et de volet (optionnel)
+
+Si vous avez deux capteurs de contact Zigbee (ou tout `binary_sensor` de classe
+`door` / `opening` / `window` / `garage_door`), vous pouvez les associer depuis
+**Configurer → dernier écran** : un sur la **porte de la Boks**, un sur le
+**volet à courrier**. Les deux sont facultatifs ; vides, rien ne change.
+
+**Intérêt.** L'entité Bluetooth *Porte* n'est à jour que depuis la dernière
+connexion (le lien n'est pas tenu par défaut). Un capteur de contact donne la
+porte en **temps réel**.
+
+| Entité | Rôle |
+|---|---|
+| *Porte (capteur Zigbee)* | Reflet en direct du capteur de porte |
+| *Volet à courrier* | Reflet en direct du capteur du volet |
+| *Activité courrier* (`event`) | `mail_deposited` (volet ouvert puis refermé), `mail_collected` (porte ouverte), `unauthorized_opening` |
+| *Dernier dépôt / relève / ouverture non attendue* | Horodatages correspondants |
+
+Un capteur `unavailable`/`unknown` ne produit jamais d'événement : seul un vrai
+passage fermé → ouvert compte.
+
+### Détection d'ouverture non attendue
+
+Choisissez comment une ouverture de porte est jugée **non attendue** (capteur de
+porte requis). La fenêtre de corrélation vaut 30 s par défaut.
+
+| Mode | « Légitime » signifie | Lit (et draine) le journal ? | Angle mort |
+|---|---|---|---|
+| **Ne rien faire** (défaut) | — | non | aucune alerte |
+| **Non commandée par Home Assistant** | vous avez appuyé sur *Ouvrir* dans HA dans la fenêtre | **non** | un code ou un badge valides déclenchent *aussi* l'alerte — elle ne distingue pas un voisin d'un intrus |
+| **Absente du journal de la boîte** | une entrée code/badge du journal (ou *Ouvrir*) dans la fenêtre | **oui** — exige un *Intervalle de rafraîchissement* > 0 | l'alerte n'arrive qu'à la **lecture suivante** ; draine le journal dont dépend le dongle BoksLINK officiel (voir [Historique des ouvertures](#historique-des-ouvertures)) |
+
 ## Plusieurs boîtes
 
 Chaque boîte est une entrée de configuration distincte, identifiée par son

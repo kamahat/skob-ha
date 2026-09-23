@@ -110,6 +110,10 @@ class BoksState:
     last_vigik_open: datetime | None = None
     last_mifare_open: datetime | None = None
     last_code_open: datetime | None = None
+    #: Dérivées des capteurs Zigbee optionnels (cf. sensors_link.py).
+    last_mail_deposit: datetime | None = None
+    last_mail_collect: datetime | None = None
+    last_unauthorized_opening: datetime | None = None
 
 
 #: Catégorie d'ouverture (cf. protocol.history_opening) → attribut de BoksState.
@@ -194,6 +198,12 @@ class BoksLink:
         #: Collecteur d'événements pendant une lecture d'historique (None sinon).
         self._history: list[tuple[int, bytes]] | None = None
         self._history_done: asyncio.Event | None = None
+        #: Suivi des capteurs Zigbee associés (None si aucun) — cf. sensors_link.py.
+        self.tracker: Any = None
+        #: Crochets appelés par le suivi : ouverture commandée depuis HA acceptée,
+        #: et fin d'un drain du journal (ouvertures code/badge vues).
+        self.on_ha_open: Callable[[datetime], None] | None = None
+        self.on_history: Callable[[list[datetime], datetime], None] | None = None
 
     @property
     def hold(self) -> bool:
@@ -310,6 +320,11 @@ class BoksLink:
     def _notify_listeners(self) -> None:
         for update in list(self._listeners):
             update()
+
+    @callback
+    def async_notify(self) -> None:
+        """Version publique de ``_notify_listeners`` pour les modules voisins."""
+        self._notify_listeners()
 
     async def async_start(self) -> None:
         """Démarre l'écoute passive des advertisements.
@@ -462,6 +477,8 @@ class BoksLink:
             await self._otp_pool.async_commit_use(code)
             self._notify_listeners()  # le capteur « codes OTP restants » change
         _LOGGER.info("ouverture acceptée par %s", self.address)
+        if self.on_ha_open is not None:
+            self.on_ha_open(datetime.now(timezone.utc))
 
     async def _async_open_via_temp_session(self, frame: bytes) -> None:
         """Établit une connexion le temps d'une commande, puis la relâche.
@@ -946,11 +963,13 @@ class BoksLink:
 
         now = datetime.now(timezone.utc)
         latest: dict[str, int] = {}  # kind → plus petit âge vu (= plus récent)
+        openings: list[datetime] = []  # toutes les ouvertures code/badge du drain
         for opcode, payload in events:
             parsed = history_opening(opcode, payload)
             if parsed is None:
                 continue
             kind, age = parsed
+            openings.append(now - timedelta(seconds=age))
             if kind not in latest or age < latest[kind]:
                 latest[kind] = age
 
@@ -973,6 +992,10 @@ class BoksLink:
                 self.state.last_code_open,
             )
             self._notify_listeners()
+        if self.on_history is not None:
+            # Y compris un drain vide : il prouve qu'aucune ouverture n'est
+            # passée sous silence jusqu'à maintenant.
+            self.on_history(openings, now)
 
     @callback
     def _on_app_notify(self, _char: BleakGATTCharacteristic, data: bytearray) -> None:
