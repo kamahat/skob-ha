@@ -102,8 +102,52 @@ def test_bad_mode_falls_back_to_off():
 
 
 def test_pending_is_capped():
-    m = ml.MailLogic(ml.MODE_JOURNAL, 30)
+    # debounce=0 : ce test cible le plafond MAX_PENDING, pas l'anti-rebond.
+    m = ml.MailLogic(ml.MODE_JOURNAL, 30, debounce=0)
     m.on_door(False, t(0))
     for i in range(1, 200):
         m.on_door(i % 2 == 1, t(i))
     assert len(m._pending) <= ml.MAX_PENDING
+
+
+# -- anti-rebond ------------------------------------------------------------
+
+
+def test_debounce_collapses_door_bounce_into_one_collected():
+    # Rebond réel constaté le 26/09 : off,on,off,on,off en moins d'une seconde.
+    m = ml.MailLogic(ml.MODE_JOURNAL, 30)
+    m.on_door(False, t(0))
+    assert kinds(m.on_door(True, t(0.2))) == [ml.EVENT_COLLECTED]
+    assert m.on_door(False, t(0.5)) == []
+    assert m.on_door(True, t(0.7)) == []  # rebond : pas un 2e événement
+    assert m.on_door(False, t(0.8)) == []
+    assert len(m._pending) == 1  # une seule ouverture en attente, pas deux
+
+
+def test_debounce_collapses_flap_bounce_into_one_deposited():
+    m = ml.MailLogic()
+    m.on_flap(False, t(0))
+    m.on_flap(True, t(0.1))
+    assert kinds(m.on_flap(False, t(0.3))) == [ml.EVENT_DEPOSITED]
+    m.on_flap(True, t(0.4))  # rebond : réouverture bruitée
+    assert m.on_flap(False, t(0.5)) == []  # pas un 2e dépôt
+
+
+def test_debounce_still_fires_a_real_second_opening_later():
+    m = ml.MailLogic(ml.MODE_JOURNAL, 30, debounce=5)
+    m.on_door(False, t(0))
+    assert kinds(m.on_door(True, t(1))) == [ml.EVENT_COLLECTED]
+    m.on_door(False, t(2))
+    assert m.on_door(True, t(3)) == []  # dans la fenêtre de 5 s : rebond supposé
+    m.on_door(False, t(4))
+    # Après la fenêtre : une vraie 2e ouverture doit compter.
+    assert kinds(m.on_door(True, t(10))) == [ml.EVENT_COLLECTED]
+    assert len(m._pending) == 2
+
+
+def test_debounce_zero_disables_filtering():
+    m = ml.MailLogic(ml.MODE_JOURNAL, 30, debounce=0)
+    m.on_door(False, t(0))
+    assert kinds(m.on_door(True, t(0.1))) == [ml.EVENT_COLLECTED]
+    m.on_door(False, t(0.2))
+    assert kinds(m.on_door(True, t(0.3))) == [ml.EVENT_COLLECTED]

@@ -210,7 +210,10 @@ connection (the link is not held by default). A contact sensor gives the door in
 | *Last mail deposit / collection / unexpected opening* | Timestamps of the above |
 
 A sensor going `unavailable`/`unknown` never produces an event: only a real
-closed → open transition counts.
+closed → open transition counts. A cheap contact sensor can also bounce
+(toggle several times within under a second during a single physical
+movement): each event kind is debounced 5s, so a bounce only ever counts
+once.
 
 ### Unexpected-opening detection
 

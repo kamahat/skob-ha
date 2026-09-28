@@ -217,7 +217,10 @@ porte en **temps réel**.
 | *Dernier dépôt / relève / ouverture non attendue* | Horodatages correspondants |
 
 Un capteur `unavailable`/`unknown` ne produit jamais d'événement : seul un vrai
-passage fermé → ouvert compte.
+passage fermé → ouvert compte. Un capteur de contact bon marché peut aussi
+rebondir (plusieurs allers-retours en moins d'une seconde pour un seul
+mouvement physique) : chaque type d'événement est filtré sur 5 s, donc un
+rebond ne compte jamais qu'une fois.
 
 ### Détection d'ouverture non attendue
 
