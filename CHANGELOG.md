@@ -4,6 +4,19 @@ All notable changes to this integration are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/), and the project
 follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **Sensor bounce produced duplicate mail events.** A real contact sensor can
+  toggle on/off several times within under a second (up to ~2.8s apart
+  observed) during a single physical opening or closing — not two events, one
+  noisy mechanical one. `mail_logic.py` now debounces `mail_deposited` and
+  `mail_collected` independently (5s default, `MailLogic(debounce=...)`): the
+  first edge fires immediately, later edges within the window are dropped.
+  This also fixes duplicate `unauthorized_opening` alerts, since a bounced
+  door opening no longer creates two pending entries. Trade-off: a genuine
+  second opening within 5s of the first no longer counts either.
+
 ## [1.3.0] — 2026-09-24
 
 > **Field-test gap.** The *missing from the box's log* detection mode has
